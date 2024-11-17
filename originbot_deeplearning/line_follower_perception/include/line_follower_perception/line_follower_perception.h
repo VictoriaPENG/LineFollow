@@ -60,7 +60,6 @@ class LineFollowerPerceptionNode : public DnnNode {
   cv::Mat image_bgr_;
   std::string model_path_;
   std::string model_name_;
-  std::shared_ptr<LineCoordinateParser> line_coordinate_parser_;
 };
 
 #endif  // _LINE_FOLLOWER_PERCEPTION_H_

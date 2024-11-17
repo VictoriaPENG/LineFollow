@@ -41,21 +41,11 @@ find_package(dnn_node REQUIRED)
 find_package(hbm_img_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
-
-# Set the correct paths for libraries based on the example
-set(SYS_ROOT ${CMAKE_SYSROOT})  # Ensure this is set correctly as per your system
-
-include_directories(include
-  ${PROJECT_SOURCE_DIR}
-  ${SYS_ROOT}/usr/include/opencv/
-  ${SYS_ROOT}/usr/include/
-)
+find_package(hobot_cv REQUIRED)
 
 link_directories(
-  ${SYS_ROOT}/usr/lib/hbbpu/
-  ${SYS_ROOT}/usr/lib/hbmedia/
-  ${SYS_ROOT}/usr/lib/
-  ${SYS_ROOT}/usr/hobot/lib/
+  ${CMAKE_SYSROOT}/usr/lib/hbbpu/
+  /usr/hobot/lib
 )
 
 add_executable(line_follower_perception src/line_follower_perception.cpp)
@@ -67,12 +57,11 @@ ament_target_dependencies(
   std_msgs
   hbm_img_msgs
   geometry_msgs
+  hobot_cv
 )
 
 target_link_libraries(${PROJECT_NAME}
   hbmem
-  alog
-  cnn_intf
 )
 
 target_include_directories(line_follower_perception PUBLIC
@@ -81,6 +70,11 @@ target_include_directories(line_follower_perception PUBLIC
 
 install(TARGETS line_follower_perception
   DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY
+  ${PROJECT_SOURCE_DIR}/config/
+  DESTINATION lib/${PROJECT_NAME}/config/
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

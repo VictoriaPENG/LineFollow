@@ -1,3 +1,17 @@
+// Copyright (c) 2024，D-Robotics.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "line_follower_perception/line_follower_perception.h"
 
 #include <fstream>
@@ -5,6 +19,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "dnn_node/util/image_proc.h"
+#include "hobot_cv/hobotcv_imgproc.h"
 
 void prepare_nv12_tensor_without_padding(const char *image_data,
                                          int image_height,
@@ -60,7 +75,7 @@ void prepare_nv12_tensor_without_padding(int image_height,
 LineFollowerPerceptionNode::LineFollowerPerceptionNode(const std::string& node_name,
                       const NodeOptions& options)
   : DnnNode(node_name, options) {
-  this->declare_parameter("model_path", "/userdata/dev_ws/src/originbot/originbot_deeplearning/line_follower_perception/model/resnet18_224x224_nv12.bin");
+  this->declare_parameter("model_path", "./resnet18_224x224_nv12.bin");
   this->declare_parameter("model_name", "resnet18_224x224_nv12");
   if (GetParams() == false) {
     RCLCPP_ERROR(this->get_logger(), "LineFollowerPerceptionNode GetParams() failed\n\n");
@@ -151,7 +166,7 @@ int LineFollowerPerceptionNode::PostProcess(
 
 void LineFollowerPerceptionNode::subscription_callback(
     const hbm_img_msgs::msg::HbmMsg1080P::SharedPtr msg) {
-  int ret = 0;
+      
   if (!msg || !rclcpp::ok()) {
     return;
   }
@@ -162,7 +177,7 @@ void LineFollowerPerceptionNode::subscription_callback(
      << ", step: " << msg->step << ", index: " << msg->index
      << ", stamp: " << msg->time_stamp.sec << "_"
      << msg->time_stamp.nanosec << ", data size: " << msg->data_size;
-  RCLCPP_INFO(rclcpp::get_logger("LineFollowerPerceptionNode"), "%s", ss.str().c_str());
+  RCLCPP_DEBUG(rclcpp::get_logger("LineFollowerPerceptionNode"), "%s", ss.str().c_str());
 
   auto model_manage = GetModel();
   if (!model_manage) {
@@ -172,49 +187,18 @@ void LineFollowerPerceptionNode::subscription_callback(
 
   hbDNNRoi roi;
   roi.left = 0;
-  roi.top = 160;
-  roi.right = 640 - 1;
-  roi.bottom = 352 - 1;
-  hbDNNTensor input_tensor;
-  cv::Mat original_image(msg->height, msg->width, CV_8UC1, const_cast<unsigned char*>(msg->data.data()));
+  roi.top = 128;
+  roi.right = 640;
+  roi.bottom = 352;
 
-  // 创建一个新的 Mat 对象用于存放调整大小后的图像
-  cv::Mat resized_image;
+  cv::Mat img_mat(msg->height * 3 / 2, msg->width, CV_8UC1, (void*)(msg->data.data()));
+  cv::Range rowRange(roi.top, roi.bottom);
+  cv::Range colRange(roi.left, roi.right);
+  cv::Mat crop_img_mat = hobot_cv::hobotcv_crop(img_mat, msg->height, msg->width, 224, 224, rowRange, colRange);
 
-  // 调整图像大小到 224x224
-  cv::resize(original_image, resized_image, cv::Size(224, 224));
-
-  prepare_nv12_tensor_without_padding(reinterpret_cast<const char*>(msg->data.data()),
-                                      224,
-                                      224,
-                                      &input_tensor);
-  hbDNNTensor output_tensor;
-  prepare_nv12_tensor_without_padding(224, 224, &output_tensor);
-
-  hbDNNInferCtrlParam ctrl = {
-      HB_BPU_CORE_0, 0, 0, 0, 0, 0, 0};
-  hbDNNTaskHandle_t task_handle = nullptr;
-  hbDNNTensor *output_tensors[1] = {&output_tensor};
-  int32_t roi_count = 1; 
-  hbDNNHandle_t dnn_handle = model_manage->GetDNNHandle(); 
-
-  hbDNNInfer(&task_handle, output_tensors, &input_tensor,dnn_handle, &ctrl);
-  ret = hbDNNWaitTaskDone(task_handle, 0);
-  if (0 != ret) {
-    RCLCPP_ERROR(rclcpp::get_logger("LineFollowerPerceptionNode"), "hbDNNWaitTaskDone failed!");
-    hbSysFreeMem(&(input_tensor.sysMem[0]));
-    hbSysFreeMem(&(output_tensor.sysMem[0]));
-  }
-  hbDNNReleaseTask(task_handle);
-  if (0 != ret) {
-    RCLCPP_ERROR(rclcpp::get_logger("LineFollowerPerceptionNode"), "release task failed!");
-    hbSysFreeMem(&(input_tensor.sysMem[0]));
-    hbSysFreeMem(&(output_tensor.sysMem[0]));
-  }
-
-  std::shared_ptr<hobot::easy_dnn::NV12PyramidInput> pyramid = nullptr;
+  std::shared_ptr<hobot::dnn_node::NV12PyramidInput> pyramid = nullptr;
   pyramid = hobot::dnn_node::ImageProc::GetNV12PyramidFromNV12Img(
-      reinterpret_cast<const char*>(output_tensor.sysMem[0].virAddr),
+      reinterpret_cast<const char*>(crop_img_mat.data),
       224,
       224,
       224,
@@ -239,23 +223,18 @@ void LineFollowerPerceptionNode::subscription_callback(
 
   auto dnn_output = std::shared_ptr<DnnNodeOutput>();
 
-  ret = Run(inputs, dnn_output, rois);
-  if (ret != 0 && ret != HB_DNN_TASK_NUM_EXCEED_LIMIT) {
-    RCLCPP_ERROR(this->get_logger(), "Run predict failed!");
-    return;
-  }
+  Predict(inputs, dnn_output, rois);
+}
 
-  ret = hbSysFreeMem(&(input_tensor.sysMem[0]));
-  if (ret != 0) {
-    RCLCPP_ERROR(rclcpp::get_logger("LineFollowerPerceptionNode"),
-                 "Free input_tensor mem failed!");
-    hbSysFreeMem(&(output_tensor.sysMem[0]));
-  }
-  ret = hbSysFreeMem(&(output_tensor.sysMem[0]));
-  if (ret != 0) {
-    RCLCPP_ERROR(rclcpp::get_logger("LineFollowerPerceptionNode"),
-                 "Free output_tensor mem failed!");
-  }
+int LineFollowerPerceptionNode::Predict(
+  std::vector<std::shared_ptr<DNNInput>> &dnn_inputs,
+  const std::shared_ptr<DnnNodeOutput> &output,
+  const std::shared_ptr<std::vector<hbDNNRoi>> rois) {
+  RCLCPP_INFO(rclcpp::get_logger("LineFollowerPerceptionNode"), "input size:%ld roi size:%ld", dnn_inputs.size(), rois->size());
+  return Run(dnn_inputs,
+             output,
+             rois,
+             true);
 }
 
 int32_t LineCoordinateParser::Parse(
@@ -274,26 +253,25 @@ int32_t LineCoordinateParser::Parse(
   }
   DNNTensor &tensor = *output_tensor;
   const int32_t *shape = tensor.properties.validShape.dimensionSize;
-  RCLCPP_INFO(rclcpp::get_logger("LineFollowerPerceptionNode"),
+  RCLCPP_DEBUG(rclcpp::get_logger("LineFollowerPerceptionNode"),
                "PostProcess shape[1]: %d shape[2]: %d shape[3]: %d",
                shape[1],
                shape[2],
                shape[3]);
   hbSysFlushMem(&(tensor.sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
-  float x = 0.1*reinterpret_cast<float *>(tensor.sysMem[0].virAddr)[0];
-  float y = 0.1*reinterpret_cast<float *>(tensor.sysMem[0].virAddr)[1];
-  result->x  = int((x * 112 + 112) * 640.0 / 224.0);
-  result->y = int(224 - (y * 112 + 112) + 240 - 112);
+  float x = reinterpret_cast<float *>(tensor.sysMem[0].virAddr)[0];
+  float y = reinterpret_cast<float *>(tensor.sysMem[0].virAddr)[1];
+  result->x = (x * 112 + 112) * 640.0 / 224.0;
+  result->y = 224 - (y * 112 + 112) + 240;
   RCLCPP_INFO(rclcpp::get_logger("LineFollowerPerceptionNode"),
                "coor rawx: %f,  rawy:%f, x: %f    y:%f", x, y, result->x, result->y);
   return 0;
 }
 
-
 int main(int argc, char* argv[]) {
 
   rclcpp::init(argc, argv);
-
+  RCLCPP_INFO(rclcpp::get_logger("LineFollowerPerceptionNode"), "Pkg start.");
   rclcpp::spin(std::make_shared<LineFollowerPerceptionNode>("GetLineCoordinate"));
 
   rclcpp::shutdown();
