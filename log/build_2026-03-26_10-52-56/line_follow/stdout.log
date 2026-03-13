@@ -1,0 +1,37 @@
+running egg_info
+creating build/line_follow/line_follow.egg-info
+writing build/line_follow/line_follow.egg-info/PKG-INFO
+writing dependency_links to build/line_follow/line_follow.egg-info/dependency_links.txt
+writing entry points to build/line_follow/line_follow.egg-info/entry_points.txt
+writing requirements to build/line_follow/line_follow.egg-info/requires.txt
+writing top-level names to build/line_follow/line_follow.egg-info/top_level.txt
+writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+reading manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+copying src/angle_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+copying src/motor_driver_control.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+copying src/motor_model_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+copying src/__init__.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+running install
+running install_lib
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/angle_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/motor_driver_control.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/motor_model_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/__init__.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/angle_node.py to angle_node.cpython-310.pyc
+byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/motor_driver_control.py to motor_driver_control.cpython-310.pyc
+byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/motor_model_node.py to motor_model_node.cpython-310.pyc
+byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/__init__.py to __init__.cpython-310.pyc
+running install_data
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index/resource_index
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index/resource_index/packages
+copying resource/line_follow -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index/resource_index/packages
+copying package.xml -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs

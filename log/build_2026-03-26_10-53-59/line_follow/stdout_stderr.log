@@ -1,0 +1,31 @@
+running egg_info
+writing build/line_follow/line_follow.egg-info/PKG-INFO
+writing dependency_links to build/line_follow/line_follow.egg-info/dependency_links.txt
+writing entry points to build/line_follow/line_follow.egg-info/entry_points.txt
+writing requirements to build/line_follow/line_follow.egg-info/requires.txt
+writing top-level names to build/line_follow/line_follow.egg-info/top_level.txt
+reading manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+running build
+running build_py
+running install
+running install_lib
+running install_data
+copying Markdown/Debug_Tunable_Paraments.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+copying Markdown/RDK_X5_DEPLOY_AND_VERIFY.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+copying Markdown/WHOLE_SYSTEM_DEBUG_GUIDE.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+copying Markdown/BOARD_DATA_RECORD_GUIDE.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+copying Markdown/BOARD_REGRESSION_CHECKLIST.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+copying tools/LOCAL_VISUAL_DEBUG.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/launch
+copying launch/usb_cam_web.launch.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/launch
+copying launch/line_follow_system.launch.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/launch
+creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/tools
+copying tools/save_runtime_params.sh -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/tools
+running install_egg_info
+Copying build/line_follow/line_follow.egg-info to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow-0.1.0-py3.10.egg-info
+running install_scripts
+Installing line_follow_angle_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing line_follow_motor_model_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing motor_driver_control_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+writing list of installed files to '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log'

@@ -1,0 +1,40 @@
+[1.262s] Invoking command in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow': PYTHONPATH=/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/line_follow build --build-base /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build install --record /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log --single-version-externally-managed install_data
+[1.664s] running egg_info
+[1.664s] creating build/line_follow/line_follow.egg-info
+[1.665s] writing build/line_follow/line_follow.egg-info/PKG-INFO
+[1.665s] writing dependency_links to build/line_follow/line_follow.egg-info/dependency_links.txt
+[1.665s] writing entry points to build/line_follow/line_follow.egg-info/entry_points.txt
+[1.666s] writing requirements to build/line_follow/line_follow.egg-info/requires.txt
+[1.666s] writing top-level names to build/line_follow/line_follow.egg-info/top_level.txt
+[1.666s] writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+[1.669s] reading manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+[1.670s] writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+[1.670s] running build
+[1.670s] running build_py
+[1.670s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build
+[1.671s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib
+[1.671s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+[1.671s] copying src/angle_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+[1.671s] copying src/motor_driver_control.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+[1.671s] copying src/motor_model_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+[1.671s] copying src/__init__.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+[1.672s] running install
+[1.672s] running install_lib
+[1.675s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+[1.675s] copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/angle_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+[1.676s] copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/motor_driver_control.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+[1.676s] copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/motor_model_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+[1.677s] copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/__init__.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+[1.679s] byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/angle_node.py to angle_node.cpython-310.pyc
+[1.684s] byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/motor_driver_control.py to motor_driver_control.cpython-310.pyc
+[1.688s] byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/motor_model_node.py to motor_model_node.cpython-310.pyc
+[1.695s] byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/__init__.py to __init__.cpython-310.pyc
+[1.695s] running install_data
+[1.695s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index
+[1.695s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index/resource_index
+[1.695s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index/resource_index/packages
+[1.695s] copying resource/line_follow -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/ament_index/resource_index/packages
+[1.695s] copying package.xml -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow
+[1.696s] creating /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+[1.696s] error: can't copy 'Debug_Tunable_Paraments.md': doesn't exist or not a regular file
+[1.736s] Invoked command in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow' returned '1': PYTHONPATH=/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/line_follow build --build-base /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build install --record /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log --single-version-externally-managed install_data

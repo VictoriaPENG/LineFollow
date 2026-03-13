@@ -1,0 +1,5 @@
+[console_scripts]
+line_follow_angle_node = line_follow.angle_node:main
+line_follow_motor_model_node = line_follow.motor_model_node:main
+motor_driver_control_node = line_follow.motor_driver_control:main
+
