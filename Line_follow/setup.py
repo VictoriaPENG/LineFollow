@@ -1,0 +1,34 @@
+import os
+from glob import glob
+
+from setuptools import setup
+
+
+package_name = "line_follow"
+
+
+setup(
+    name=package_name,
+    version="0.1.0",
+    packages=[package_name],
+    package_dir={package_name: "src"},
+    data_files=[
+        ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        ("share/" + package_name, ["package.xml", "RDK_X5_DEPLOY_AND_VERIFY.md"]),
+        (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
+    ],
+    install_requires=["setuptools"],
+    zip_safe=True,
+    maintainer="yunbo",
+    maintainer_email="support@example.com",
+    description="Vision-based line following package for OriginBot tracked platform.",
+    license="Apache-2.0",
+    tests_require=["pytest"],
+    entry_points={
+        "console_scripts": [
+            "line_follow_angle_node = line_follow.angle_node:main",
+            "line_follow_motor_model_node = line_follow.motor_model_node:main",
+            "motor_driver_control_node = line_follow.motor_driver_control:main",
+        ],
+    },
+)
