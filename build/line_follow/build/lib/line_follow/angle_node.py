@@ -161,7 +161,8 @@ def detect_line_and_angle(
     margin=60,
     minpix=50,
     kp=1.0,
-    roi_y_start_ratio=0.5,
+    roi_bottom_offset_ratio=0.25,
+    roi_height_ratio=0.5,
     draw=False,
 ):
     """
@@ -177,22 +178,37 @@ def detect_line_and_angle(
     """
     h, w = bin_img.shape[:2]
 
-    # 先在图像下半部分统计直方图，范围可调，便于现场扩大或缩小 ROI。
-    roi_y_start_ratio = min(0.95, max(0.0, float(roi_y_start_ratio)))
-    y0 = int(round(h * roi_y_start_ratio))
-    bottom = bin_img[y0:h, :]
+    # 统计 ROI 改为图像中间一半高度：
+    # 从“距图像底部 1/4 高度”的位置开始，向上统计“图像高度的 1/2”。
+    roi_bottom_offset_ratio = min(0.95, max(0.0, float(roi_bottom_offset_ratio)))
+    roi_height_ratio = min(0.95, max(0.05, float(roi_height_ratio)))
+    roi_bottom = int(round(h * (1.0 - roi_bottom_offset_ratio)))
+    roi_height = max(1, int(round(h * roi_height_ratio)))
+    roi_top = max(0, roi_bottom - roi_height)
+    roi_bottom = min(h, max(roi_top + 1, roi_bottom))
+
+    bottom = bin_img[roi_top:roi_bottom, :]
     hist = np.sum(bottom > 0, axis=0).astype(np.int32)
     if hist.size == 0 or int(np.max(hist)) <= 0:
         vis = cv2.cvtColor(bin_img, cv2.COLOR_GRAY2BGR) if draw else None
         if vis is not None:
-            cv2.line(vis, (0, y0), (w - 1, y0), (255, 128, 0), 2)
-            cv2.putText(vis, "line not found in bottom ROI", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.rectangle(vis, (0, roi_top), (w - 1, roi_bottom - 1), (255, 128, 0), 2)
+            cv2.putText(
+                vis,
+                "line not found in detect ROI",
+                (20, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 255),
+                2,
+            )
         return False, 0.0, 0.0, 0.0, 0.0, vis
     base_x = int(np.argmax(hist))
 
-    # 滑动窗口从下往上逐窗跟踪线条中心。
+    # 滑动窗口仅在检测 ROI 内从下往上逐窗跟踪线条中心。
     nw = max(3, int(n_windows))
-    win_h = h // nw
+    roi_search_height = max(1, roi_bottom - roi_top)
+    win_h = max(1, int(math.ceil(roi_search_height / float(nw))))
     margin = max(10, int(margin))
     minpix = max(10, int(minpix))
 
@@ -201,12 +217,13 @@ def detect_line_and_angle(
     vis = None
     if draw:
         vis = cv2.cvtColor(bin_img, cv2.COLOR_GRAY2BGR)
-        cv2.line(vis, (0, y0), (w - 1, y0), (255, 128, 0), 2)
+        cv2.rectangle(vis, (0, roi_top), (w - 1, roi_bottom - 1), (255, 128, 0), 2)
 
     for i in range(nw):
         # 逐层向上构建窗口区域。
-        win_y_low = max(0, h - (i + 1) * win_h)
-        win_y_high = min(h, h - i * win_h)
+        win_y_high = max(roi_top, roi_bottom - i * win_h)
+        win_y_low = max(roi_top, roi_bottom - (i + 1) * win_h)
+        win_y_high = min(roi_bottom, win_y_high)
         win_x_low = max(0, current_x - margin)
         win_x_high = min(w, current_x + margin)
         if win_x_high <= win_x_low or win_y_high <= win_y_low:
@@ -340,7 +357,8 @@ class LineFollowAngleNode(Node):
         self.declare_parameter("margin", 300)
         self.declare_parameter("minpix", 50)
         self.declare_parameter("kp", 1.0)
-        self.declare_parameter("roi_y_start_ratio", 0.5)
+        self.declare_parameter("roi_bottom_offset_ratio", 0.25)
+        self.declare_parameter("roi_height_ratio", 0.5)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("publish_debug_image", True)
         self.declare_parameter("debug_binary_topic", "/line_follow/debug_binary")
@@ -572,7 +590,8 @@ class LineFollowAngleNode(Node):
         margin = int(self.get_parameter("margin").value)
         minpix = int(self.get_parameter("minpix").value)
         kp = float(self.get_parameter("kp").value)
-        roi_y_start_ratio = float(self.get_parameter("roi_y_start_ratio").value)
+        roi_bottom_offset_ratio = float(self.get_parameter("roi_bottom_offset_ratio").value)
+        roi_height_ratio = float(self.get_parameter("roi_height_ratio").value)
         show = bool(self.get_parameter("show_debug").value)
         publish_debug_image = self.publish_debug_image_enabled
         show_angle_curve = bool(self.get_parameter("show_angle_curve").value)
@@ -597,7 +616,8 @@ class LineFollowAngleNode(Node):
             margin=margin,
             minpix=minpix,
             kp=kp,
-            roi_y_start_ratio=roi_y_start_ratio,
+            roi_bottom_offset_ratio=roi_bottom_offset_ratio,
+            roi_height_ratio=roi_height_ratio,
             draw=need_detect_vis,
         )
 
@@ -634,8 +654,26 @@ class LineFollowAngleNode(Node):
                     "line detection failed: "
                     f"streak={self.detect_fail_streak}, white_ratio={white_ratio:.3f}, "
                     f"line_is_white={line_is_white}, thresh={thresh}, margin={margin}, "
-                    f"minpix={minpix}, roi_y_start_ratio={roi_y_start_ratio:.2f}"
+                    f"minpix={minpix}, roi_bottom_offset_ratio={roi_bottom_offset_ratio:.2f}, "
+                    f"roi_height_ratio={roi_height_ratio:.2f}"
                 )
+
+            # 丢线时持续发布“直行”保底命令，避免下游因无角度输入而停住。
+            m1 = Float32()
+            m1.data = 0.0
+            self.pub_angle.publish(m1)
+
+            m2 = Float32()
+            m2.data = 0.0
+            self.pub_steer.publish(m2)
+
+            m3 = Float32()
+            m3.data = 0.0
+            self.pub_offset_px.publish(m3)
+
+            m4 = Float32()
+            m4.data = 0.0
+            self.pub_offset_norm.publish(m4)
 
         header = getattr(msg, "header", None)
 

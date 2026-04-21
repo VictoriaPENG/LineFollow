@@ -37,20 +37,23 @@ class LineFollowMotorModelNode(Node):
         self.declare_parameter("offset_topic", "/line_follow/line_offset_norm")
         self.declare_parameter("speed_topic", "/motor_speed_cmd")
         self.declare_parameter("publish_debug_topic", True)
+        self.declare_parameter("enabled", True)
 
         # 控制参数：决定角度变化时底盘如何响应。
-        self.declare_parameter("max_visual_angle_deg", 45.0)
-        self.declare_parameter("heading_gain", 1.8)
-        self.declare_parameter("lateral_gain", 18.0)
-        self.declare_parameter("base_speed_ratio", 0.32)
-        self.declare_parameter("speed_reduce_gain", 0.55)
+        self.declare_parameter("max_visual_angle_deg", 20.0)
+        self.declare_parameter("heading_gain", 1.2)
+        self.declare_parameter("lateral_gain", 10.0)
+        self.declare_parameter("base_speed_ratio", 0.08)
+        self.declare_parameter("speed_reduce_gain", 0.75)
         self.declare_parameter("min_output_rpm", 18.0)
-        self.declare_parameter("allow_reverse", True)
+        self.declare_parameter("allow_reverse", False)
         self.declare_parameter("command_timeout_sec", 0.5)
         self.declare_parameter("offset_timeout_sec", 0.3)
         self.declare_parameter("angle_lowpass_alpha", 0.35)
-        self.declare_parameter("angle_deadband_deg", 1.5)
-        self.declare_parameter("max_motor_rpm_step_per_sec", 1200.0)
+        self.declare_parameter("angle_deadband_deg", 2.5)
+        self.declare_parameter("straight_angle_epsilon_deg", 1.5)
+        self.declare_parameter("max_motor_rpm_step_per_sec", 900.0)
+        self.declare_parameter("max_motor_rpm", 600.0)
 
         # 底盘机械参数。
         self.declare_parameter("track_width_m", 0.577)
@@ -114,6 +117,7 @@ class LineFollowMotorModelNode(Node):
         self.offset_topic = str(self.get_parameter("offset_topic").value)
         self.speed_topic = str(self.get_parameter("speed_topic").value)
         self.publish_debug_topic = bool(self.get_parameter("publish_debug_topic").value)
+        self.enabled = bool(self.get_parameter("enabled").value)
 
     def _refresh_runtime_parameters(self, overrides=None):
         """从参数服务器刷新当前控制/机械参数，支持运行时调参。"""
@@ -129,7 +133,9 @@ class LineFollowMotorModelNode(Node):
             "offset_timeout_sec": float(self.get_parameter("offset_timeout_sec").value),
             "angle_lowpass_alpha": float(self.get_parameter("angle_lowpass_alpha").value),
             "angle_deadband_deg": float(self.get_parameter("angle_deadband_deg").value),
+            "straight_angle_epsilon_deg": float(self.get_parameter("straight_angle_epsilon_deg").value),
             "max_motor_rpm_step_per_sec": float(self.get_parameter("max_motor_rpm_step_per_sec").value),
+            "max_motor_rpm": float(self.get_parameter("max_motor_rpm").value),
             "track_width_m": float(self.get_parameter("track_width_m").value),
             "drive_wheel_diameter_m": float(self.get_parameter("drive_wheel_diameter_m").value),
             "track_pitch_m": float(self.get_parameter("track_pitch_m").value),
@@ -155,7 +161,9 @@ class LineFollowMotorModelNode(Node):
         self.offset_timeout_sec = max(0.0, float(values["offset_timeout_sec"]))
         self.angle_lowpass_alpha = min(1.0, max(0.0, float(values["angle_lowpass_alpha"])))
         self.angle_deadband_deg = max(0.0, float(values["angle_deadband_deg"]))
+        self.straight_angle_epsilon_deg = max(0.0, float(values["straight_angle_epsilon_deg"]))
         self.max_motor_rpm_step_per_sec = max(0.0, float(values["max_motor_rpm_step_per_sec"]))
+        self.max_motor_rpm = max(0.0, float(values["max_motor_rpm"]))
         self.track_width_m = max(0.05, float(values["track_width_m"]))
         self.drive_wheel_diameter_m = max(0.01, float(values["drive_wheel_diameter_m"]))
         self.track_pitch_m = max(0.001, float(values["track_pitch_m"]))
@@ -173,6 +181,18 @@ class LineFollowMotorModelNode(Node):
         self.track_loop_length_m = self.track_pitch_m * float(self.track_link_count)
         self.rated_output_rpm = self.rated_motor_rpm / self.gear_ratio
         self.no_load_output_rpm = self.no_load_motor_rpm / self.gear_ratio
+
+    def _sanitize_scalar(self, value: float, default: float = 0.0, limit: float = None) -> float:
+        """过滤 NaN/Inf，并在需要时追加对称限幅。"""
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = default
+        if not math.isfinite(value):
+            value = default
+        if limit is not None:
+            value = max(-limit, min(limit, value))
+        return value
 
     def _on_set_parameters(self, params):
         """允许运行时刷新控制参数，话题结构类参数仍要求重启节点。"""
@@ -192,6 +212,18 @@ class LineFollowMotorModelNode(Node):
         except (TypeError, ValueError) as exc:
             return SetParametersResult(successful=False, reason=str(exc))
 
+        if "enabled" in overrides:
+            self.enabled = bool(overrides["enabled"])
+            if not self.enabled:
+                self.publish_speed(0.0, 0.0)
+                self.last_angle_stamp = None
+                self.last_command_stamp = None
+                self.last_left_rpm = 0.0
+                self.last_right_rpm = 0.0
+                self.filtered_angle_deg = None
+                self.last_offset_stamp = None
+                self.latest_offset_norm = 0.0
+
         if overrides:
             changed = ", ".join(sorted(overrides.keys()))
             self.get_logger().info(f"runtime parameters updated: {changed}")
@@ -208,10 +240,16 @@ class LineFollowMotorModelNode(Node):
         - 差额电机 RPM（调试用）
         """
         # 先限制视觉输入角度，防止异常值让下游速度发散。
-        angle_deg = max(-self.max_visual_angle_deg, min(self.max_visual_angle_deg, angle_deg))
-        offset_norm = max(-1.0, min(1.0, float(offset_norm)))
+        angle_deg = self._sanitize_scalar(angle_deg, default=0.0, limit=self.max_visual_angle_deg)
+        offset_norm = self._sanitize_scalar(offset_norm, default=0.0, limit=1.0)
         command_angle_deg = angle_deg + self.lateral_gain * offset_norm
-        command_angle_deg = max(-self.max_visual_angle_deg, min(self.max_visual_angle_deg, command_angle_deg))
+        command_angle_deg = self._sanitize_scalar(
+            command_angle_deg,
+            default=0.0,
+            limit=self.max_visual_angle_deg,
+        )
+        if abs(command_angle_deg) <= self.straight_angle_epsilon_deg:
+            command_angle_deg = 0.0
         angle_rad = math.radians(command_angle_deg)
         angle_norm = min(1.0, abs(command_angle_deg) / self.max_visual_angle_deg)
 
@@ -220,8 +258,11 @@ class LineFollowMotorModelNode(Node):
         center_output_rpm = max(self.min_output_rpm, center_output_rpm)
 
         # 将视觉角度映射为目标角速度，再换算成履带左右差速。
-        target_yaw_rate = -self.heading_gain * angle_rad
-        delta_output_rpm = target_yaw_rate * self.track_width_m * 30.0 / self.wheel_circumference_m
+        if command_angle_deg == 0.0:
+            delta_output_rpm = 0.0
+        else:
+            target_yaw_rate = -self.heading_gain * angle_rad
+            delta_output_rpm = target_yaw_rate * self.track_width_m * 30.0 / self.wheel_circumference_m
 
         # 当前底盘的左右履带转向与理想模型相反，这里交换差速方向。
         left_output_rpm = center_output_rpm + delta_output_rpm
@@ -242,6 +283,9 @@ class LineFollowMotorModelNode(Node):
         # 输出轴转速通过减速比换算成电机侧转速。
         left_motor_rpm = left_output_rpm * self.gear_ratio * self.left_motor_sign
         right_motor_rpm = right_output_rpm * self.gear_ratio * self.right_motor_sign
+        if self.max_motor_rpm > 0.0:
+            left_motor_rpm = max(-self.max_motor_rpm, min(self.max_motor_rpm, left_motor_rpm))
+            right_motor_rpm = max(-self.max_motor_rpm, min(self.max_motor_rpm, right_motor_rpm))
         # 调试量使用绝对值，避免相对安装电机时“直行中心速度接近 0”的假象。
         center_motor_rpm = 0.5 * (abs(left_motor_rpm) + abs(right_motor_rpm))
         delta_motor_rpm = 0.5 * (abs(right_motor_rpm) - abs(left_motor_rpm))
@@ -292,7 +336,7 @@ class LineFollowMotorModelNode(Node):
 
     def on_offset(self, msg: Float32):
         """保存最近一次横向偏移，供角度回调合成控制量。"""
-        self.latest_offset_norm = max(-1.0, min(1.0, float(msg.data)))
+        self.latest_offset_norm = self._sanitize_scalar(msg.data, default=0.0, limit=1.0)
         self.last_offset_stamp = self.get_clock().now()
 
     def _current_offset_norm(self) -> float:
@@ -304,7 +348,7 @@ class LineFollowMotorModelNode(Node):
         elapsed = (self.get_clock().now() - self.last_offset_stamp).nanoseconds / 1e9
         if elapsed > self.offset_timeout_sec:
             return 0.0
-        return self.latest_offset_norm
+        return self._sanitize_scalar(self.latest_offset_norm, default=0.0, limit=1.0)
 
     def publish_speed(self, left_rpm: float, right_rpm: float):
         """将左右电机速度封装成 ROS 消息并发布。"""
@@ -314,7 +358,11 @@ class LineFollowMotorModelNode(Node):
 
     def on_angle(self, msg: Float32):
         """角度回调：视觉节点每发一次角度，这里就生成一次速度命令。"""
-        raw_angle_deg = float(msg.data)
+        if not self.enabled:
+            self.last_angle_stamp = None
+            return
+
+        raw_angle_deg = self._sanitize_scalar(msg.data, default=0.0, limit=self.max_visual_angle_deg)
         angle_deg = self._filter_angle(raw_angle_deg)
         offset_norm = self._current_offset_norm()
         left_rpm, right_rpm, center_motor_rpm, delta_motor_rpm = self.angle_to_motor_rpm(angle_deg, offset_norm)
@@ -333,22 +381,26 @@ class LineFollowMotorModelNode(Node):
             self.debug_delta_pub.publish(debug_msg)
 
     def on_timeout_check(self):
-        """如果一段时间没有收到新角度，则主动停车。"""
+        """如果一段时间没有收到新角度，则退化为直行保底。"""
+        if not self.enabled:
+            return
+
         if self.last_angle_stamp is None:
             return
 
         elapsed = (self.get_clock().now() - self.last_angle_stamp).nanoseconds / 1e9
         if elapsed > self.command_timeout_sec:
-            self.publish_speed(0.0, 0.0)
+            left_rpm, right_rpm, _, _ = self.angle_to_motor_rpm(0.0, 0.0)
+            self.publish_speed(left_rpm, right_rpm)
             self.last_angle_stamp = None
             self.last_command_stamp = None
-            self.last_left_rpm = 0.0
-            self.last_right_rpm = 0.0
+            self.last_left_rpm = float(left_rpm)
+            self.last_right_rpm = float(right_rpm)
             self.filtered_angle_deg = None
             self.last_offset_stamp = None
             self.latest_offset_norm = 0.0
             self.get_logger().warn(
-                f"angle command timeout ({elapsed:.2f}s), publish stop to {self.speed_topic}"
+                f"angle command timeout ({elapsed:.2f}s), fallback to straight drive on {self.speed_topic}"
             )
 
 

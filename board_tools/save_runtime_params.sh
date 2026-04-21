@@ -6,11 +6,17 @@ mkdir -p "$OUTDIR"
 
 for node in line_follow_angle_node line_follow_motor_model_node motor_driver_control_node; do
   if ros2 param dump "/$node" > "$OUTDIR/$node.yaml" 2>/dev/null; then
-    :
-  else
-    ros2 param dump "$node" > "$OUTDIR/$node.yaml"
+    echo "saved $node -> $OUTDIR/$node.yaml"
+    continue
   fi
-  echo "saved $node -> $OUTDIR/$node.yaml"
+
+  if ros2 param dump "$node" > "$OUTDIR/$node.yaml" 2>/dev/null; then
+    echo "saved $node -> $OUTDIR/$node.yaml"
+    continue
+  fi
+
+  rm -f "$OUTDIR/$node.yaml"
+  echo "skip $node: node not available"
 done
 
 echo "runtime parameter snapshot saved in $OUTDIR"

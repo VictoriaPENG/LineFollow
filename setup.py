@@ -17,17 +17,10 @@ setup(
         (os.path.join("share", package_name), ["package.xml"]),
         (
             os.path.join("share", package_name, "docs"),
-            [
-                "Markdown/Debug_Tunable_Paraments.md",
-                "Markdown/RDK_X5_DEPLOY_AND_VERIFY.md",
-                "Markdown/WHOLE_SYSTEM_DEBUG_GUIDE.md",
-                "Markdown/BOARD_DATA_RECORD_GUIDE.md",
-                "Markdown/BOARD_REGRESSION_CHECKLIST.md",
-            ],
+            sorted(glob("Markdown/*.md")),
         ),
-        (os.path.join("share", package_name, "docs"), ["tools/LOCAL_VISUAL_DEBUG.md"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
-        (os.path.join("share", package_name, "tools"), glob("tools/*.sh")),
+        (os.path.join("share", package_name, "board_tools"), glob("board_tools/*.sh")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -41,6 +34,8 @@ setup(
             "line_follow_angle_node = line_follow.angle_node:main",
             "line_follow_motor_model_node = line_follow.motor_model_node:main",
             "motor_driver_control_node = line_follow.motor_driver_control:main",
+            "remote_relay_drive_node = line_follow.remote_relay_drive_node:main",
+            "remote_long_press_start_line_follow_node = line_follow.remote_long_press_start_line_follow_node:main",
         ],
     },
 )
