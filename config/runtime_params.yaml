@@ -1,0 +1,71 @@
+remote_long_press_start_line_follow_node:
+  ros__parameters:
+    forward_pin: 31
+    reverse_pin: 29
+    use_board_numbering: true
+    debug_inputs_only: false
+    hold_seconds: 0.5
+    poll_hz: 20.0
+    debounce_activate_count: 5
+    debounce_deactivate_count: 1
+    autostart_line_follow_stack: true
+    autostart_driver_process: true
+    allow_inputs_without_pull_resistors: true
+    launch_command: "ros2 launch line_follow line_follow_system.launch.py line_follow_enabled:=false start_driver:=false"
+    speed_topic: "/motor_speed_cmd"
+    override_active_topic: "/joystick_override_active"
+    forward_left_rpm: -900.0
+    forward_right_rpm: 900.0
+    line_follow_node_name: "/line_follow_motor_model_node"
+    adopt_existing_line_follow_stack: true
+    line_follow_enable_timeout_sec: 2.0
+    line_follow_disable_timeout_sec: 0.2
+    driver_launch_command: "ros2 run line_follow motor_driver_control_node"
+    auto_record_runtime_data: true
+    record_root_dir: "/userdata/test_logs"
+    record_rosbag: true
+    save_params_script: "/userdata/dev_ws/src/originbot/Line_follow/board_tools/save_runtime_params.sh"
+
+joystick_drive_node:
+  ros__parameters:
+    speed_topic: "/joystick_motor_speed_cmd"
+    override_active_topic: "/joystick_override_active"
+    forward_pin: 11
+    reverse_pin: 15
+    left_pin: 13
+    right_pin: 16
+    use_board_numbering: true
+    debug_inputs_only: false
+    debounce_activate_count: 5
+    debounce_deactivate_count: 1
+    forward_left_rpm: 900.0
+    forward_right_rpm: -900.0
+    reverse_left_rpm: -900.0
+    reverse_right_rpm: 900.0
+    turn_left_left_rpm: -900.0
+    turn_left_right_rpm: -900.0
+    turn_right_left_rpm: 900.0
+    turn_right_right_rpm: 900.0
+    publish_hz: 20.0
+    autostart_driver_process: false
+    driver_launch_command: "ros2 run line_follow motor_driver_control_node"
+
+motor_driver_control_node:
+  ros__parameters:
+    serial_port: "/dev/ttyUSB0"
+    baud_rate: 9600
+    serial_timeout_sec: 0.1
+    speed_topic: "/motor_speed_cmd"
+    override_speed_topic: "/joystick_motor_speed_cmd"
+    override_active_topic: "/joystick_override_active"
+    speed_status_topic: "/motor_speed_status"
+    override_active_timeout_sec: 0.3
+    left_slave: 6
+    right_slave: 8
+    min_speed_rpm: 0
+    max_speed_rpm: 5000
+    auto_start: true
+    driver_command_timeout_sec: 0.5
+    write_retry_count: 2
+    fail_safe_on_write_error: true
+    max_consecutive_write_errors: 3

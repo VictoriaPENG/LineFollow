@@ -1,7 +1,9 @@
 [console_scripts]
+joystick_drive_node = line_follow.joystick_drive_node:main
 line_follow_angle_node = line_follow.angle_node:main
 line_follow_motor_model_node = line_follow.motor_model_node:main
 motor_driver_control_node = line_follow.motor_driver_control:main
 remote_long_press_start_line_follow_node = line_follow.remote_long_press_start_line_follow_node:main
 remote_relay_drive_node = line_follow.remote_relay_drive_node:main
+web_debug_dashboard_node = line_follow.web_debug_dashboard_node:main
 

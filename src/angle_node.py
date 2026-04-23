@@ -162,7 +162,7 @@ def detect_line_and_angle(
     minpix=50,
     kp=1.0,
     roi_bottom_offset_ratio=0.25,
-    roi_height_ratio=0.5,
+    roi_height_ratio=0.25,
     draw=False,
 ):
     """
@@ -178,8 +178,7 @@ def detect_line_and_angle(
     """
     h, w = bin_img.shape[:2]
 
-    # 统计 ROI 改为图像中间一半高度：
-    # 从“距图像底部 1/4 高度”的位置开始，向上统计“图像高度的 1/2”。
+    # 默认 ROI 为图像中线往下的四分之一：0.50H 到 0.75H。
     roi_bottom_offset_ratio = min(0.95, max(0.0, float(roi_bottom_offset_ratio)))
     roi_height_ratio = min(0.95, max(0.05, float(roi_height_ratio)))
     roi_bottom = int(round(h * (1.0 - roi_bottom_offset_ratio)))
@@ -253,7 +252,14 @@ def detect_line_and_angle(
     centers_np = np.array(centers, dtype=np.float32).reshape(-1, 1, 2)
     vx, vy, x0f, y0f = cv2.fitLine(centers_np, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
 
-    # 相对“竖直向上”计算夹角。
+    # fitLine 返回的方向向量没有朝向约束；若直接算角度，可能同一条线在
+    # “向上”和“向下”两个等价方向之间跳变，从而出现接近 180 度的假象。
+    # 这里统一约束为“指向画面上方”，再相对竖直向上计算夹角。
+    if float(vy) > 0.0:
+        vx = -vx
+        vy = -vy
+
+    # 相对“竖直向上”计算夹角，并约束为 [-90, 90]。
     # 在本程序中约定：线条向画面右侧倾斜为正角度。
     angle = math.atan2(float(vx), float(-vy))
     angle_deg = angle * 180.0 / math.pi
@@ -348,17 +354,18 @@ class LineFollowAngleNode(Node):
         self.declare_parameter("blur_ksize", 5)
         self.declare_parameter("thresh", -1)
         self.declare_parameter("morph_ksize", 3)
-        self.declare_parameter("min_component_area", 0)
+        self.declare_parameter("min_component_area", 20)
         self.declare_parameter("max_component_area", 0)
         self.declare_parameter("max_component_width_px", 0)
         self.declare_parameter("max_component_width_ratio", 0.0)
         self.declare_parameter("component_intensity_limit", -1.0)
         self.declare_parameter("n_windows", 9)
-        self.declare_parameter("margin", 300)
+        self.declare_parameter("margin", 180)
         self.declare_parameter("minpix", 50)
         self.declare_parameter("kp", 1.0)
+        self.declare_parameter("angle_bias_deg", -10.0)
         self.declare_parameter("roi_bottom_offset_ratio", 0.25)
-        self.declare_parameter("roi_height_ratio", 0.5)
+        self.declare_parameter("roi_height_ratio", 0.25)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("publish_debug_image", True)
         self.declare_parameter("debug_binary_topic", "/line_follow/debug_binary")
@@ -590,6 +597,7 @@ class LineFollowAngleNode(Node):
         margin = int(self.get_parameter("margin").value)
         minpix = int(self.get_parameter("minpix").value)
         kp = float(self.get_parameter("kp").value)
+        angle_bias_deg = float(self.get_parameter("angle_bias_deg").value)
         roi_bottom_offset_ratio = float(self.get_parameter("roi_bottom_offset_ratio").value)
         roi_height_ratio = float(self.get_parameter("roi_height_ratio").value)
         show = bool(self.get_parameter("show_debug").value)
@@ -620,6 +628,8 @@ class LineFollowAngleNode(Node):
             roi_height_ratio=roi_height_ratio,
             draw=need_detect_vis,
         )
+        angle_deg += angle_bias_deg
+        steer_deg = -float(kp) * angle_deg
 
         if ok:
             self.detect_success_count += 1

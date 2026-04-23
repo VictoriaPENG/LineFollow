@@ -1,0 +1,52 @@
+line_follow_angle_node:
+  ros__parameters:
+    image_topic: "/hbmem_img"
+    image_msg_type: "hbmem"
+    offset_px_topic: "/line_follow/line_offset_px"
+    offset_norm_topic: "/line_follow/line_offset_norm"
+    line_is_white: false
+    blur_ksize: 5
+    thresh: -1
+    morph_ksize: 3
+    n_windows: 9
+    margin: 180
+    minpix: 50
+    kp: 1.0
+    angle_bias_deg: 1.0
+    roi_bottom_offset_ratio: 0.25
+    roi_height_ratio: 0.25
+    min_component_area: 20
+    max_component_area: 0
+    max_component_width_px: 0
+    max_component_width_ratio: 0.0
+    component_intensity_limit: -1.0
+    show_debug: false
+    publish_debug_image: true
+    show_angle_curve: true
+    angle_curve_history_size: 240
+    angle_curve_limit_deg: 45.0
+
+line_follow_motor_model_node:
+  ros__parameters:
+    angle_topic: "/line_follow/line_angle_deg"
+    speed_topic: "/motor_speed_cmd"
+    publish_debug_topic: true
+    max_visual_angle_deg: 20.0
+    heading_gain: 4.0
+    base_motor_rpm: 600.0
+    allow_reverse: false
+    command_timeout_sec: 0.5
+    fallback_straight_when_no_angle: true
+    speed_update_period_sec: 2.0
+    angle_lowpass_alpha: 0.35
+    angle_deadband_deg: 2.5
+    straight_angle_epsilon_deg: 1.5
+    max_motor_rpm_step_per_sec: 900.0
+    max_motor_rpm: 600.0
+    steering_sign: -1.0
+    track_width_m: 0.577
+    drive_wheel_diameter_m: 0.18
+    track_pitch_m: 0.06
+    track_link_count: 24
+    left_motor_sign: 1.0
+    right_motor_sign: -1.0

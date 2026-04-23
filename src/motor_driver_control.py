@@ -25,6 +25,7 @@ from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.node import Node
 import serial
+from std_msgs.msg import Bool
 from std_msgs.msg import Float32MultiArray
 
 
@@ -45,6 +46,10 @@ class MotorDriverControlNode(Node):
         self.declare_parameter("baud_rate", 9600)
         self.declare_parameter("serial_timeout_sec", 0.1)
         self.declare_parameter("speed_topic", "/motor_speed_cmd")
+        self.declare_parameter("override_speed_topic", "/joystick_motor_speed_cmd")
+        self.declare_parameter("override_active_topic", "/joystick_override_active")
+        self.declare_parameter("speed_status_topic", "/motor_speed_status")
+        self.declare_parameter("override_active_timeout_sec", 0.3)
         self.declare_parameter("left_slave", 6)
         self.declare_parameter("right_slave", 8)
         self.declare_parameter("min_speed_rpm", 0)
@@ -61,6 +66,12 @@ class MotorDriverControlNode(Node):
         self.baud_rate = int(self.get_parameter("baud_rate").value)
         self.serial_timeout_sec = max(0.01, float(self.get_parameter("serial_timeout_sec").value))
         self.speed_topic = str(self.get_parameter("speed_topic").value)
+        self.override_speed_topic = str(self.get_parameter("override_speed_topic").value)
+        self.override_active_topic = str(self.get_parameter("override_active_topic").value)
+        self.speed_status_topic = str(self.get_parameter("speed_status_topic").value)
+        self.override_active_timeout_sec = max(
+            0.05, float(self.get_parameter("override_active_timeout_sec").value)
+        )
         self.left_slave = int(self.get_parameter("left_slave").value)
         self.right_slave = int(self.get_parameter("right_slave").value)
         self.min_speed_rpm = max(0, int(self.get_parameter("min_speed_rpm").value))
@@ -77,6 +88,11 @@ class MotorDriverControlNode(Node):
         self.write_error_streak = 0
         self.last_speed_cmd_stamp = None
         self.last_command_was_stop = True
+        self.override_active = False
+        self.override_active_stamp = None
+        self.base_command = (0.0, 0.0)
+        self.override_command = (0.0, 0.0)
+        self.override_command_stamp = None
 
         candidate = self._open_serial(self.serial_port, self.baud_rate, self.serial_timeout_sec)
         if candidate is not None:
@@ -84,12 +100,28 @@ class MotorDriverControlNode(Node):
             if not self._init_driver_pair(self.left_slave, self.right_slave):
                 self._enter_fault("driver init failed during startup")
 
-        self.sub = self.create_subscription(Float32MultiArray, self.speed_topic, self.on_speed_cmd, 10)
+        self.sub = self.create_subscription(Float32MultiArray, self.speed_topic, self.on_base_speed_cmd, 10)
+        self.speed_status_pub = self.create_publisher(Float32MultiArray, self.speed_status_topic, 10)
+        self.override_sub = self.create_subscription(
+            Float32MultiArray,
+            self.override_speed_topic,
+            self.on_override_speed_cmd,
+            10,
+        )
+        self.override_active_sub = self.create_subscription(
+            Bool,
+            self.override_active_topic,
+            self.on_override_active,
+            10,
+        )
         self.timeout_timer = self.create_timer(0.1, self._on_command_timeout_check)
         self.add_on_set_parameters_callback(self._on_set_parameters)
         self.get_logger().info(
-            f"Subscribed to {self.speed_topic}, driver left={self.left_slave}, right={self.right_slave}, "
+            f"Subscribed to base={self.speed_topic}, override={self.override_speed_topic}, "
+            f"speed_status={self.speed_status_topic}, "
+            f"override_active={self.override_active_topic}, driver left={self.left_slave}, right={self.right_slave}, "
             f"timeout={self.driver_command_timeout_sec:.2f}s, retries={self.write_retry_count}, "
+            f"override_active_timeout={self.override_active_timeout_sec:.2f}s, "
             f"max_consecutive_write_errors={self.max_consecutive_write_errors}"
         )
 
@@ -235,8 +267,12 @@ class MotorDriverControlNode(Node):
 
     def _send_stop_to_serial(self, ser, left_slave: int, right_slave: int) -> bool:
         """向指定串口的左右驱动发送停机命令。"""
-        left_ok = self._write_modbus_register_on(ser, left_slave, self.REG_MODE, self.MODE_STOP, attempts=1)
-        right_ok = self._write_modbus_register_on(ser, right_slave, self.REG_MODE, self.MODE_STOP, attempts=1)
+        left_speed_ok = self._write_modbus_register_on(ser, left_slave, self.REG_SPEED, 0, attempts=1)
+        left_mode_ok = self._write_modbus_register_on(ser, left_slave, self.REG_MODE, self.MODE_STOP, attempts=1)
+        right_speed_ok = self._write_modbus_register_on(ser, right_slave, self.REG_SPEED, 0, attempts=1)
+        right_mode_ok = self._write_modbus_register_on(ser, right_slave, self.REG_MODE, self.MODE_STOP, attempts=1)
+        left_ok = left_speed_ok and left_mode_ok
+        right_ok = right_speed_ok and right_mode_ok
         return bool(left_ok and right_ok)
 
     def _close_serial(self, ser, left_slave: int, right_slave: int):
@@ -276,6 +312,9 @@ class MotorDriverControlNode(Node):
         """对单个电机应用一条速度命令。"""
         mode, value = self._speed_to_mode_and_value(speed_rpm)
         if mode == self.MODE_STOP:
+            speed_ok = self._write_modbus_register_on(self.ser, slave_addr, self.REG_SPEED, 0)
+            if not speed_ok:
+                return False
             return self._write_modbus_register_on(self.ser, slave_addr, self.REG_MODE, self.MODE_STOP)
 
         speed_ok = self._write_modbus_register_on(self.ser, slave_addr, self.REG_SPEED, value)
@@ -290,6 +329,7 @@ class MotorDriverControlNode(Node):
         ok = self._send_stop_to_serial(self.ser, self.left_slave, self.right_slave)
         if ok:
             self.get_logger().warn(f"motors stopped: {reason}")
+            self._publish_speed_status(0.0, 0.0)
         else:
             self.get_logger().error(f"failed to stop motors cleanly: {reason}")
         self.last_command_was_stop = True
@@ -327,6 +367,9 @@ class MotorDriverControlNode(Node):
 
     def _on_command_timeout_check(self):
         """如果驱动节点长时间没收到新速度命令，则主动停车。"""
+        override_expired = self._refresh_override_active()
+        if override_expired:
+            self._apply_selected_command()
         if self.driver_faulted or self.last_speed_cmd_stamp is None or self.last_command_was_stop:
             return
 
@@ -336,7 +379,7 @@ class MotorDriverControlNode(Node):
 
     def _on_set_parameters(self, params):
         """允许运行时修改限幅、超时、重试和串口参数。"""
-        static_params = {"speed_topic"}
+        static_params = {"speed_topic", "override_speed_topic", "override_active_topic", "speed_status_topic"}
         next_values = {
             "serial_port": self.serial_port,
             "baud_rate": self.baud_rate,
@@ -350,6 +393,7 @@ class MotorDriverControlNode(Node):
             "write_retry_count": self.write_retry_count,
             "fail_safe_on_write_error": self.fail_safe_on_write_error,
             "max_consecutive_write_errors": self.max_consecutive_write_errors,
+            "override_active_timeout_sec": self.override_active_timeout_sec,
             "fault_reset_counter": self.fault_reset_counter,
         }
 
@@ -374,6 +418,9 @@ class MotorDriverControlNode(Node):
             next_values["write_retry_count"] = max(0, int(next_values["write_retry_count"]))
             next_values["fail_safe_on_write_error"] = bool(next_values["fail_safe_on_write_error"])
             next_values["max_consecutive_write_errors"] = max(1, int(next_values["max_consecutive_write_errors"]))
+            next_values["override_active_timeout_sec"] = max(
+                0.05, float(next_values["override_active_timeout_sec"])
+            )
             next_values["fault_reset_counter"] = int(next_values["fault_reset_counter"])
         except (TypeError, ValueError) as exc:
             return SetParametersResult(successful=False, reason=str(exc))
@@ -433,6 +480,7 @@ class MotorDriverControlNode(Node):
         self.write_retry_count = next_values["write_retry_count"]
         self.fail_safe_on_write_error = next_values["fail_safe_on_write_error"]
         self.max_consecutive_write_errors = next_values["max_consecutive_write_errors"]
+        self.override_active_timeout_sec = next_values["override_active_timeout_sec"]
         self.fault_reset_counter = next_values["fault_reset_counter"]
 
         if reopen_needed:
@@ -446,17 +494,33 @@ class MotorDriverControlNode(Node):
             self.get_logger().info(f"runtime parameters updated: {changed}")
         return SetParametersResult(successful=True)
 
-    def on_speed_cmd(self, msg: Float32MultiArray):
-        """速度话题回调：将左右 RPM 分别下发到左右驱动器。"""
+    def _extract_command(self, msg: Float32MultiArray, topic_name: str):
         if len(msg.data) != 2:
-            self.get_logger().warn("Invalid /motor_speed_cmd, expect [left_rpm, right_rpm]")
-            return
+            self.get_logger().warn(f"Invalid {topic_name}, expect [left_rpm, right_rpm]")
+            return None
+        return float(msg.data[0]), float(msg.data[1])
+
+    def _publish_speed_status(self, left_rpm: float, right_rpm: float):
+        msg = Float32MultiArray()
+        msg.data = [float(left_rpm), float(right_rpm)]
+        self.speed_status_pub.publish(msg)
+
+    def _refresh_override_active(self):
+        if not self.override_active or self.override_active_stamp is None:
+            return False
+        elapsed = (self.get_clock().now() - self.override_active_stamp).nanoseconds / 1e9
+        if elapsed > self.override_active_timeout_sec:
+            self.override_active = False
+            self.override_command = (0.0, 0.0)
+            self.override_command_stamp = None
+            return True
+        return False
+
+    def _apply_command_pair(self, left_rpm: float, right_rpm: float, source: str):
         if self.driver_faulted:
             self.get_logger().error(f"driver fault latched, ignore speed command until reset: {self.fault_reason}")
             return
 
-        left_rpm = float(msg.data[0])
-        right_rpm = float(msg.data[1])
         left_ok = self._apply_motor_command(self.left_slave, left_rpm)
         right_ok = self._apply_motor_command(self.right_slave, right_rpm)
 
@@ -464,11 +528,48 @@ class MotorDriverControlNode(Node):
             self.write_error_streak = 0
             self.last_speed_cmd_stamp = self.get_clock().now()
             self.last_command_was_stop = abs(left_rpm) < 1e-6 and abs(right_rpm) < 1e-6
+            self._publish_speed_status(left_rpm, right_rpm)
             return
 
         self._record_write_failure(
-            f"left_ok={left_ok}, right_ok={right_ok}, left_rpm={left_rpm:.1f}, right_rpm={right_rpm:.1f}"
+            f"source={source}, left_ok={left_ok}, right_ok={right_ok}, left_rpm={left_rpm:.1f}, right_rpm={right_rpm:.1f}"
         )
+
+    def _apply_selected_command(self):
+        self._refresh_override_active()
+        if self.override_active:
+            left_rpm, right_rpm = self.override_command
+            source = "override"
+        else:
+            left_rpm, right_rpm = self.base_command
+            source = "base"
+        self._apply_command_pair(left_rpm, right_rpm, source)
+
+    def on_base_speed_cmd(self, msg: Float32MultiArray):
+        cmd = self._extract_command(msg, self.speed_topic)
+        if cmd is None:
+            return
+        self.base_command = cmd
+        if not self.override_active:
+            self._apply_selected_command()
+
+    def on_override_speed_cmd(self, msg: Float32MultiArray):
+        cmd = self._extract_command(msg, self.override_speed_topic)
+        if cmd is None:
+            return
+        self.override_command = cmd
+        self.override_command_stamp = self.get_clock().now()
+        if self.override_active:
+            self._apply_selected_command()
+
+    def on_override_active(self, msg: Bool):
+        active = bool(msg.data)
+        self.override_active = active
+        self.override_active_stamp = self.get_clock().now()
+        if not active:
+            self.override_command = (0.0, 0.0)
+            self.override_command_stamp = None
+        self._apply_selected_command()
 
     def destroy_node(self):
         """节点退出时确保停机并关闭串口。"""

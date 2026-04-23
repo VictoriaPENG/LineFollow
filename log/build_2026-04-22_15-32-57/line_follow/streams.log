@@ -1,0 +1,31 @@
+[1.316s] Invoking command in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow': PYTHONPATH=/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/line_follow build --build-base /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build install --record /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log --single-version-externally-managed install_data
+[1.871s] running egg_info
+[1.872s] writing build/line_follow/line_follow.egg-info/PKG-INFO
+[1.874s] writing dependency_links to build/line_follow/line_follow.egg-info/dependency_links.txt
+[1.874s] writing entry points to build/line_follow/line_follow.egg-info/entry_points.txt
+[1.874s] writing requirements to build/line_follow/line_follow.egg-info/requires.txt
+[1.874s] writing top-level names to build/line_follow/line_follow.egg-info/top_level.txt
+[1.878s] reading manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+[1.882s] writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+[1.885s] running build
+[1.886s] running build_py
+[1.886s] copying src/joystick_drive_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow
+[1.886s] running install
+[1.887s] running install_lib
+[1.889s] copying /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build/lib/line_follow/joystick_drive_node.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow
+[1.893s] byte-compiling /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow/joystick_drive_node.py to joystick_drive_node.cpython-310.pyc
+[1.901s] running install_data
+[1.903s] copying Markdown/摇杆遥控器联合控制调试指南.md -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/docs
+[1.903s] running install_egg_info
+[1.911s] removing '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow-0.1.0-py3.10.egg-info' (and everything under it)
+[1.912s] Copying build/line_follow/line_follow.egg-info to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow-0.1.0-py3.10.egg-info
+[1.917s] running install_scripts
+[1.975s] Installing joystick_drive_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.975s] Installing line_follow_angle_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.977s] Installing line_follow_motor_model_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.977s] Installing motor_driver_control_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.978s] Installing remote_long_press_start_line_follow_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.979s] Installing remote_relay_drive_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.979s] Installing web_debug_dashboard_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+[1.979s] writing list of installed files to '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log'
+[2.044s] Invoked command in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow' returned '0': PYTHONPATH=/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/line_follow build --build-base /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build install --record /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log --single-version-externally-managed install_data

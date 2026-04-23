@@ -23,26 +23,11 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
+from line_follow.gpio_compat import load_gpio_module
+from line_follow.gpio_input_filter import DebouncedDigitalInput
 from line_follow.runtime_capture import RuntimeCaptureManager
 
-
-def _load_gpio_module():
-    """Try common GPIO modules used on embedded Linux boards."""
-    module_errors = []
-    for module_name in ("Hobot.GPIO", "Jetson.GPIO", "RPi.GPIO"):
-        try:
-            module = __import__(module_name, fromlist=["GPIO"])
-            return module
-        except Exception as exc:  # pragma: no cover - depends on board environment
-            module_errors.append(f"{module_name}: {exc}")
-
-    raise RuntimeError(
-        "No supported GPIO Python module found. Tried: "
-        + "; ".join(module_errors)
-    )
-
-
-GPIO = _load_gpio_module()
+GPIO = load_gpio_module()
 
 FIXED_ACTIVE_LOW = True
 FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = True
@@ -59,10 +44,12 @@ class RelayRemoteDriveNode(Node):
         self.declare_parameter("reverse_pin", 33)
         self.declare_parameter("use_board_numbering", True)
         self.declare_parameter("debug_inputs_only", False)
-        self.declare_parameter("forward_left_rpm", 300.0)
-        self.declare_parameter("forward_right_rpm", -300.0)
-        self.declare_parameter("reverse_left_rpm", -300.0)
-        self.declare_parameter("reverse_right_rpm", 300.0)
+        self.declare_parameter("debounce_activate_count", 5)
+        self.declare_parameter("debounce_deactivate_count", 1)
+        self.declare_parameter("forward_left_rpm", -600.0)
+        self.declare_parameter("forward_right_rpm", 600.0)
+        self.declare_parameter("reverse_left_rpm", 300.0)
+        self.declare_parameter("reverse_right_rpm", -300.0)
         self.declare_parameter("publish_hz", 10.0)
         self.declare_parameter("autostart_driver_process", True)
         self.declare_parameter(
@@ -84,6 +71,8 @@ class RelayRemoteDriveNode(Node):
         self.active_low = FIXED_ACTIVE_LOW
         self.allow_inputs_without_pull_resistors = FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS
         self.debug_inputs_only = bool(self.get_parameter("debug_inputs_only").value)
+        debounce_activate_count = int(self.get_parameter("debounce_activate_count").value)
+        debounce_deactivate_count = int(self.get_parameter("debounce_deactivate_count").value)
         self.forward_cmd = (
             float(self.get_parameter("forward_left_rpm").value),
             float(self.get_parameter("forward_right_rpm").value),
@@ -120,6 +109,16 @@ class RelayRemoteDriveNode(Node):
         self.last_state = "stop"
         self.last_cmd = (0.0, 0.0)
         self.last_debug_snapshot = None
+        self.forward_filter = DebouncedDigitalInput(
+            active_low=self.active_low,
+            activate_count=debounce_activate_count,
+            deactivate_count=debounce_deactivate_count,
+        )
+        self.reverse_filter = DebouncedDigitalInput(
+            active_low=self.active_low,
+            activate_count=debounce_activate_count,
+            deactivate_count=debounce_deactivate_count,
+        )
         self._driver_child = None
         self._shutting_down = False
 
@@ -134,6 +133,8 @@ class RelayRemoteDriveNode(Node):
             f"mode={'BOARD' if self.use_board_numbering else 'BCM'}, "
             f"forward_pin={self.forward_pin}, reverse_pin={self.reverse_pin}, "
             f"active_low={self.active_low}, debug_inputs_only={self.debug_inputs_only}, "
+            f"debounce_activate_count={debounce_activate_count}, "
+            f"debounce_deactivate_count={debounce_deactivate_count}, "
             f"forward_cmd={self.forward_cmd}, reverse_cmd={self.reverse_cmd}, "
             f"autostart_driver_process={self.autostart_driver_process}, "
             f"driver_launch_command={self.driver_launch_command}"
@@ -166,10 +167,10 @@ class RelayRemoteDriveNode(Node):
             GPIO.setup(self.forward_pin, GPIO.IN)
             GPIO.setup(self.reverse_pin, GPIO.IN)
 
-    def _read_pin(self, pin: int) -> Tuple[int, bool]:
+    def _read_pin(self, pin: int, filter_state: DebouncedDigitalInput) -> Tuple[int, bool, bool]:
         raw_level = int(GPIO.input(pin))
-        active = (raw_level == 0) if self.active_low else (raw_level != 0)
-        return raw_level, active
+        raw_active, filtered_active, _ = filter_state.update(raw_level)
+        return raw_level, raw_active, filtered_active
 
     def _start_driver_process(self) -> None:
         if self._shutting_down:
@@ -239,19 +240,28 @@ class RelayRemoteDriveNode(Node):
             self._publish_command((0.0, 0.0))
             return
 
-        forward_raw, forward_active = self._read_pin(self.forward_pin)
-        reverse_raw, reverse_active = self._read_pin(self.reverse_pin)
+        forward_raw, forward_raw_active, forward_active = self._read_pin(self.forward_pin, self.forward_filter)
+        reverse_raw, reverse_raw_active, reverse_active = self._read_pin(self.reverse_pin, self.reverse_filter)
 
         if self.debug_inputs_only:
-            snapshot = (forward_raw, forward_active, reverse_raw, reverse_active)
+            snapshot = (
+                forward_raw,
+                forward_raw_active,
+                forward_active,
+                reverse_raw,
+                reverse_raw_active,
+                reverse_active,
+            )
             if snapshot != self.last_debug_snapshot:
                 self.get_logger().info(
-                    f"relay inputs: forward_raw={forward_raw}, forward_active={forward_active}, "
-                    f"reverse_raw={reverse_raw}, reverse_active={reverse_active}"
+                    f"relay inputs: forward_raw={forward_raw}, forward_raw_active={forward_raw_active}, "
+                    f"forward_active={forward_active}, reverse_raw={reverse_raw}, "
+                    f"reverse_raw_active={reverse_raw_active}, reverse_active={reverse_active}"
                 )
                 self.capture.log_event(
-                    f"relay inputs: forward_raw={forward_raw}, forward_active={forward_active}, "
-                    f"reverse_raw={reverse_raw}, reverse_active={reverse_active}"
+                    f"relay inputs: forward_raw={forward_raw}, forward_raw_active={forward_raw_active}, "
+                    f"forward_active={forward_active}, reverse_raw={reverse_raw}, "
+                    f"reverse_raw_active={reverse_raw_active}, reverse_active={reverse_active}"
                 )
                 self.last_debug_snapshot = snapshot
             self.last_state = "debug"

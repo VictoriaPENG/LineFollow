@@ -235,6 +235,13 @@ source /userdata/dev_ws/install/setup.bash
 ros2 launch line_follow usb_cam_web.launch.py device:=/dev/video8
 ```
 
+启动后可直接访问 Web 调试页：
+
+- 开发板本机：`http://127.0.0.1:8091/`
+- 局域网其他设备：`http://<BOARD_IP>:8091/`
+- 检测图直连：`http://<BOARD_IP>:8091/stream/detect.mjpg`
+- 原始相机图直连：`http://<BOARD_IP>:8091/stream/source.mjpg`
+
 另开一个终端检查话题：
 
 ```bash
@@ -419,7 +426,7 @@ ros2 topic pub --once /motor_speed_cmd std_msgs/msg/Float32MultiArray "{data: [4
 再做反转测试：
 
 ```bash
-ros2 topic pub --once /motor_speed_cmd std_msgs/msg/Float32MultiArray "{data: [300.0, -300.0]}"
+ros2 topic pub --once /motor_speed_cmd std_msgs/msg/Float32MultiArray "{data: [-300.0, 300.0]}"
 ```
 
 预期结果：

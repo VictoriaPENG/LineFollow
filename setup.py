@@ -20,6 +20,7 @@ setup(
             sorted(glob("Markdown/*.md")),
         ),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
+        (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
         (os.path.join("share", package_name, "board_tools"), glob("board_tools/*.sh")),
     ],
     install_requires=["setuptools"],
@@ -29,13 +30,15 @@ setup(
     description="Vision-based line following package for OriginBot tracked platform.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    entry_points={
+        entry_points={
         "console_scripts": [
             "line_follow_angle_node = line_follow.angle_node:main",
             "line_follow_motor_model_node = line_follow.motor_model_node:main",
             "motor_driver_control_node = line_follow.motor_driver_control:main",
+            "joystick_drive_node = line_follow.joystick_drive_node:main",
             "remote_relay_drive_node = line_follow.remote_relay_drive_node:main",
             "remote_long_press_start_line_follow_node = line_follow.remote_long_press_start_line_follow_node:main",
+            "web_debug_dashboard_node = line_follow.web_debug_dashboard_node:main",
         ],
     },
 )

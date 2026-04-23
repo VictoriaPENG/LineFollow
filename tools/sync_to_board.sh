@@ -43,7 +43,6 @@ rsync -av --delete \
   --exclude '.git/' \
   --exclude '.codex/' \
   --exclude 'Markdown/' \
-  --exclude 'tools/' \
   --exclude 'build/' \
   --exclude 'install/' \
   --exclude 'log/' \

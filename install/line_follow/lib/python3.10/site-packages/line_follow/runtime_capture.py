@@ -124,13 +124,36 @@ def _stop_process(child: subprocess.Popen) -> None:
     try:
         pgid = os.getpgid(child.pid)
         os.killpg(pgid, signal.SIGINT)
-        child.wait(timeout=5.0)
+    except ProcessLookupError:
+        return
     except Exception:
+        return
+
+    if _wait_or_signal(child, 2.0, signal.SIGTERM):
+        return
+    if _wait_or_signal(child, 2.0, signal.SIGKILL):
+        return
+    try:
+        child.wait(timeout=1.0)
+    except Exception:
+        pass
+
+
+def _wait_or_signal(child: subprocess.Popen, timeout_sec: float, sig) -> bool:
+    try:
+        child.wait(timeout=timeout_sec)
+        return True
+    except subprocess.TimeoutExpired:
         try:
             pgid = os.getpgid(child.pid)
-            os.killpg(pgid, signal.SIGTERM)
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return True
         except Exception:
-            pass
+            return False
+        return False
+    except Exception:
+        return child.poll() is not None
 
 
 def _shell_quote(text: str) -> str:

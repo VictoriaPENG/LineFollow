@@ -25,11 +25,27 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     # 在安装后的包目录中找到复用的相机 launch 文件。
     usb_launch = PathJoinSubstitution([FindPackageShare("line_follow"), "launch", "usb_cam_web.launch.py"])
+    line_follow_params_file_default = PathJoinSubstitution(
+        [FindPackageShare("line_follow"), "config", "line_follow_params.yaml"]
+    )
+    runtime_params_file_default = PathJoinSubstitution(
+        [FindPackageShare("line_follow"), "config", "runtime_params.yaml"]
+    )
 
     # 以下都是可以在命令行覆盖的 launch 参数。
+    line_follow_params_file_arg = DeclareLaunchArgument(
+        "line_follow_params_file",
+        default_value=line_follow_params_file_default,
+        description="Line-follow vision and motor-model parameter YAML",
+    )
+    runtime_params_file_arg = DeclareLaunchArgument(
+        "runtime_params_file",
+        default_value=runtime_params_file_default,
+        description="Runtime parameter YAML for motor driver and remote-control nodes",
+    )
     device_arg = DeclareLaunchArgument(
         "device",
-        default_value="/dev/video8",
+        default_value="/dev/video2",
         description="USB camera device path",
     )
     image_topic_arg = DeclareLaunchArgument(
@@ -114,7 +130,7 @@ def generate_launch_description():
     )
     margin_arg = DeclareLaunchArgument(
         "margin",
-        default_value="300",
+        default_value="180",
         description="Sliding window half width in pixels",
     )
     minpix_arg = DeclareLaunchArgument(
@@ -127,6 +143,11 @@ def generate_launch_description():
         default_value="1.0",
         description="Proportional gain used to generate steer debug value",
     )
+    angle_bias_deg_arg = DeclareLaunchArgument(
+        "angle_bias_deg",
+        default_value="1.0",
+        description="Manual bias added to detected line angle before motor control",
+    )
     roi_bottom_offset_ratio_arg = DeclareLaunchArgument(
         "roi_bottom_offset_ratio",
         default_value="0.25",
@@ -134,12 +155,12 @@ def generate_launch_description():
     )
     roi_height_ratio_arg = DeclareLaunchArgument(
         "roi_height_ratio",
-        default_value="0.5",
+        default_value="0.25",
         description="Detect ROI height ratio relative to image height",
     )
     min_component_area_arg = DeclareLaunchArgument(
         "min_component_area",
-        default_value="0",
+        default_value="20",
         description="Minimum connected-component area kept after thresholding",
     )
     max_component_area_arg = DeclareLaunchArgument(
@@ -169,43 +190,33 @@ def generate_launch_description():
     )
     heading_gain_arg = DeclareLaunchArgument(
         "heading_gain",
-        default_value="1.2",
-        description="Yaw rate gain for visual angle control",
+        default_value="4.0",
+        description="How many RPM are added/removed per degree of heading error",
     )
-    lateral_gain_arg = DeclareLaunchArgument(
-        "lateral_gain",
-        default_value="10.0",
-        description="Extra angle-equivalent gain applied to normalized lateral offset",
-    )
-    base_speed_ratio_arg = DeclareLaunchArgument(
-        "base_speed_ratio",
-        default_value="0.08",
-        description="Base speed ratio relative to rated output rpm",
+    base_motor_rpm_arg = DeclareLaunchArgument(
+        "base_motor_rpm",
+        default_value="600.0",
+        description="Fixed forward motor RPM used during line following",
     )
     line_follow_enabled_arg = DeclareLaunchArgument(
         "line_follow_enabled",
         default_value="true",
         description="Whether the motor model should actively publish line-follow speed commands",
     )
-    speed_reduce_gain_arg = DeclareLaunchArgument(
-        "speed_reduce_gain",
-        default_value="0.75",
-        description="Slow down ratio when visual angle grows",
-    )
     allow_reverse_arg = DeclareLaunchArgument(
         "allow_reverse",
         default_value="false",
         description="Allow tracked chassis to reverse one side on sharp turns",
     )
-    min_output_rpm_arg = DeclareLaunchArgument(
-        "min_output_rpm",
-        default_value="18.0",
-        description="Minimum output shaft rpm maintained by motor model",
-    )
     command_timeout_sec_arg = DeclareLaunchArgument(
         "command_timeout_sec",
         default_value="0.5",
         description="Timeout before motor model publishes stop command",
+    )
+    speed_update_period_sec_arg = DeclareLaunchArgument(
+        "speed_update_period_sec",
+        default_value="2.0",
+        description="How often the motor model samples the latest angle and changes speed",
     )
     offset_timeout_sec_arg = DeclareLaunchArgument(
         "offset_timeout_sec",
@@ -297,6 +308,11 @@ def generate_launch_description():
         default_value="true",
         description="Whether to write mode register after speed register",
     )
+    speed_status_topic_arg = DeclareLaunchArgument(
+        "speed_status_topic",
+        default_value="/motor_speed_status",
+        description="Topic where the motor driver publishes applied motor RPM",
+    )
     start_driver_arg = DeclareLaunchArgument(
         "start_driver",
         default_value="true",
@@ -328,6 +344,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(usb_launch),
         launch_arguments={
             "device": LaunchConfiguration("device"),
+            "dashboard_speed_status_topic": LaunchConfiguration("speed_status_topic"),
         }.items(),
     )
 
@@ -350,6 +367,7 @@ def generate_launch_description():
                 "margin": LaunchConfiguration("margin"),
                 "minpix": LaunchConfiguration("minpix"),
                 "kp": LaunchConfiguration("kp"),
+                "angle_bias_deg": LaunchConfiguration("angle_bias_deg"),
                 "roi_bottom_offset_ratio": LaunchConfiguration("roi_bottom_offset_ratio"),
                 "roi_height_ratio": LaunchConfiguration("roi_height_ratio"),
                 "min_component_area": LaunchConfiguration("min_component_area"),
@@ -362,7 +380,8 @@ def generate_launch_description():
                 "show_angle_curve": LaunchConfiguration("show_angle_curve"),
                 "angle_curve_history_size": LaunchConfiguration("angle_curve_history_size"),
                 "angle_curve_limit_deg": LaunchConfiguration("angle_curve_limit_deg"),
-            }
+            },
+            LaunchConfiguration("line_follow_params_file"),
         ],
     )
 
@@ -376,15 +395,11 @@ def generate_launch_description():
                 "track_width_m": LaunchConfiguration("track_width_m"),
                 "max_visual_angle_deg": LaunchConfiguration("max_visual_angle_deg"),
                 "heading_gain": LaunchConfiguration("heading_gain"),
-                "lateral_gain": LaunchConfiguration("lateral_gain"),
-                "offset_topic": LaunchConfiguration("offset_norm_topic"),
-                "base_speed_ratio": LaunchConfiguration("base_speed_ratio"),
+                "base_motor_rpm": LaunchConfiguration("base_motor_rpm"),
                 "enabled": LaunchConfiguration("line_follow_enabled"),
-                "speed_reduce_gain": LaunchConfiguration("speed_reduce_gain"),
-                "min_output_rpm": LaunchConfiguration("min_output_rpm"),
                 "allow_reverse": LaunchConfiguration("allow_reverse"),
                 "command_timeout_sec": LaunchConfiguration("command_timeout_sec"),
-                "offset_timeout_sec": LaunchConfiguration("offset_timeout_sec"),
+                "speed_update_period_sec": LaunchConfiguration("speed_update_period_sec"),
                 "angle_lowpass_alpha": LaunchConfiguration("angle_lowpass_alpha"),
                 "angle_deadband_deg": LaunchConfiguration("angle_deadband_deg"),
                 "straight_angle_epsilon_deg": LaunchConfiguration("straight_angle_epsilon_deg"),
@@ -395,7 +410,8 @@ def generate_launch_description():
                 "track_link_count": LaunchConfiguration("track_link_count"),
                 "left_motor_sign": LaunchConfiguration("left_motor_sign"),
                 "right_motor_sign": LaunchConfiguration("right_motor_sign"),
-            }
+            },
+            LaunchConfiguration("line_follow_params_file"),
         ],
     )
 
@@ -415,17 +431,21 @@ def generate_launch_description():
                 "min_speed_rpm": LaunchConfiguration("min_speed_rpm"),
                 "max_speed_rpm": LaunchConfiguration("max_speed_rpm"),
                 "auto_start": LaunchConfiguration("auto_start"),
+                "speed_status_topic": LaunchConfiguration("speed_status_topic"),
                 "driver_command_timeout_sec": LaunchConfiguration("driver_command_timeout_sec"),
                 "write_retry_count": LaunchConfiguration("write_retry_count"),
                 "fail_safe_on_write_error": LaunchConfiguration("fail_safe_on_write_error"),
                 "max_consecutive_write_errors": LaunchConfiguration("max_consecutive_write_errors"),
-            }
+            },
+            LaunchConfiguration("runtime_params_file"),
         ],
     )
 
     # 最终返回完整的启动描述列表。
     return LaunchDescription(
         [
+            line_follow_params_file_arg,
+            runtime_params_file_arg,
             device_arg,
             image_topic_arg,
             image_msg_type_arg,
@@ -446,6 +466,7 @@ def generate_launch_description():
             margin_arg,
             minpix_arg,
             kp_arg,
+            angle_bias_deg_arg,
             roi_bottom_offset_ratio_arg,
             roi_height_ratio_arg,
             min_component_area_arg,
@@ -455,14 +476,11 @@ def generate_launch_description():
             component_intensity_limit_arg,
             max_visual_angle_deg_arg,
             heading_gain_arg,
-            lateral_gain_arg,
-            base_speed_ratio_arg,
+            base_motor_rpm_arg,
             line_follow_enabled_arg,
-            speed_reduce_gain_arg,
             allow_reverse_arg,
-            min_output_rpm_arg,
             command_timeout_sec_arg,
-            offset_timeout_sec_arg,
+            speed_update_period_sec_arg,
             angle_lowpass_alpha_arg,
             angle_deadband_deg_arg,
             straight_angle_epsilon_deg_arg,
@@ -480,6 +498,7 @@ def generate_launch_description():
             baud_rate_arg,
             serial_timeout_arg,
             auto_start_arg,
+            speed_status_topic_arg,
             start_driver_arg,
             driver_command_timeout_sec_arg,
             write_retry_count_arg,
