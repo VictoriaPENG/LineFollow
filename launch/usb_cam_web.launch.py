@@ -16,7 +16,10 @@ import os
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.actions import ExecuteProcess
 from launch.actions import IncludeLaunchDescription
+from launch.actions import TimerAction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -29,7 +32,7 @@ def generate_launch_description():
     # usb cam图片发布pkg
     usb_cam_device_arg = DeclareLaunchArgument(
         'device',
-        default_value='/dev/video2',
+        default_value='/dev/video0',
         description='usb camera device')
     websocket_image_topic_arg = DeclareLaunchArgument(
         'websocket_image_topic',
@@ -43,6 +46,14 @@ def generate_launch_description():
         'websocket_only_show_image',
         default_value='True',
         description='whether the web page only shows the image stream')
+    camera_brightness_arg = DeclareLaunchArgument(
+        'camera_brightness',
+        default_value='15',
+        description='brightness value applied to the camera via v4l2-ctl')
+    dashboard_source_topic_type_arg = DeclareLaunchArgument(
+        'dashboard_source_topic_type',
+        default_value='compressed',
+        description='source topic type for dashboard: compressed or raw')
     dashboard_bind_host_arg = DeclareLaunchArgument(
         'dashboard_bind_host',
         default_value='0.0.0.0',
@@ -75,6 +86,14 @@ def generate_launch_description():
         'dashboard_speed_status_topic',
         default_value='/motor_speed_status',
         description='motor speed status topic shown in dashboard')
+    enable_websocket_arg = DeclareLaunchArgument(
+        'enable_websocket',
+        default_value='true',
+        description='whether to start websocket image page')
+    enable_dashboard_arg = DeclareLaunchArgument(
+        'enable_dashboard',
+        default_value='true',
+        description='whether to start multi-view debug dashboard')
 
     usb_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -89,12 +108,28 @@ def generate_launch_description():
     cam_node = usb_node
     camera_device_arg = usb_cam_device_arg
 
+    camera_control_node = TimerAction(
+        period=2.0,
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    '/bin/bash',
+                    '/userdata/dev_ws/src/originbot/Line_follow/board_tools/set_camera_brightness.sh',
+                    LaunchConfiguration('device'),
+                    LaunchConfiguration('camera_brightness'),
+                ],
+                shell=False,
+            )
+        ],
+    )
+
     # web展示pkg
     web_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory('websocket'),
                 'launch/websocket.launch.py')),
+        condition=IfCondition(LaunchConfiguration('enable_websocket')),
         launch_arguments={
             'websocket_image_topic': LaunchConfiguration('websocket_image_topic'),
             'websocket_image_type': LaunchConfiguration('websocket_image_type'),
@@ -125,6 +160,7 @@ def generate_launch_description():
     dashboard_node = Node(
         package='line_follow',
         executable='web_debug_dashboard_node',
+        condition=IfCondition(LaunchConfiguration('enable_dashboard')),
         output='screen',
         parameters=[
             {
@@ -132,6 +168,7 @@ def generate_launch_description():
                 'port': LaunchConfiguration('dashboard_port'),
                 'open_browser': LaunchConfiguration('dashboard_open_browser'),
                 'source_topic': LaunchConfiguration('dashboard_source_topic'),
+                'source_topic_type': LaunchConfiguration('dashboard_source_topic_type'),
                 'detect_topic': LaunchConfiguration('dashboard_detect_topic'),
                 'binary_topic': LaunchConfiguration('dashboard_binary_topic'),
                 'curve_topic': LaunchConfiguration('dashboard_curve_topic'),
@@ -145,6 +182,8 @@ def generate_launch_description():
         websocket_image_topic_arg,
         websocket_image_type_arg,
         websocket_only_show_image_arg,
+        camera_brightness_arg,
+        dashboard_source_topic_type_arg,
         dashboard_bind_host_arg,
         dashboard_port_arg,
         dashboard_open_browser_arg,
@@ -153,8 +192,11 @@ def generate_launch_description():
         dashboard_binary_topic_arg,
         dashboard_curve_topic_arg,
         dashboard_speed_status_topic_arg,
+        enable_websocket_arg,
+        enable_dashboard_arg,
         # 图片发布pkg
         cam_node,
+        camera_control_node,
         # web展示pkg
         web_node,
         # 图像编解码

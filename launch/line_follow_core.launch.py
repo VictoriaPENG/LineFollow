@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """
-巡线整系统启动文件。
+巡线核心链路启动文件。
 
-本 launch 负责组合：
-1. USB 相机与图像链路
-2. 巡线核心链路（视觉检测 -> 运动模型 -> 驱动控制）
+本 launch 只负责拉起“视觉检测 -> 运动模型 -> 驱动控制”核心节点，
+默认不启动 USB 相机、websocket 页面或调试 dashboard。
 
-这样可以复用 `usb_cam_web.launch.py` 与 `line_follow_core.launch.py`，
-避免参数声明和节点定义在多个 launch 文件里重复维护。
+适用场景：
+1. 图像链路已经由独立服务提供，例如单独运行 `usb_cam_web.launch.py`
+2. 避免与 web 自启服务重复抢占相机设备、端口和图像话题
 """
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    usb_launch = PathJoinSubstitution([FindPackageShare("line_follow"), "launch", "usb_cam_web.launch.py"])
-    core_launch = PathJoinSubstitution([FindPackageShare("line_follow"), "launch", "line_follow_core.launch.py"])
-
     line_follow_params_file_default = PathJoinSubstitution(
         [FindPackageShare("line_follow"), "config", "line_follow_params.yaml"]
     )
@@ -39,21 +36,6 @@ def generate_launch_description():
         "runtime_params_file",
         default_value=runtime_params_file_default,
         description="Runtime parameter YAML for motor driver and remote-control nodes",
-    )
-    device_arg = DeclareLaunchArgument(
-        "device",
-        default_value="/dev/video0",
-        description="USB camera device path",
-    )
-    enable_websocket_arg = DeclareLaunchArgument(
-        "enable_websocket",
-        default_value="false",
-        description="Whether to start websocket image page in the system stack",
-    )
-    enable_dashboard_arg = DeclareLaunchArgument(
-        "enable_dashboard",
-        default_value="false",
-        description="Whether to start web debug dashboard in the system stack",
     )
     image_topic_arg = DeclareLaunchArgument(
         "image_topic",
@@ -356,91 +338,104 @@ def generate_launch_description():
         description="How many consecutive write failures are allowed before latching fault",
     )
 
-    camera_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(usb_launch),
-        launch_arguments={
-            "device": LaunchConfiguration("device"),
-            "enable_websocket": LaunchConfiguration("enable_websocket"),
-            "enable_dashboard": LaunchConfiguration("enable_dashboard"),
-            "dashboard_speed_status_topic": LaunchConfiguration("speed_status_topic"),
-        }.items(),
+    angle_process = Node(
+        package="line_follow",
+        executable="line_follow_angle_node",
+        output="screen",
+        parameters=[
+            {
+                "image_topic": LaunchConfiguration("image_topic"),
+                "image_msg_type": LaunchConfiguration("image_msg_type"),
+                "offset_px_topic": LaunchConfiguration("offset_px_topic"),
+                "offset_norm_topic": LaunchConfiguration("offset_norm_topic"),
+                "line_detected_topic": LaunchConfiguration("line_detected_topic"),
+                "line_is_white": LaunchConfiguration("line_is_white"),
+                "blur_ksize": LaunchConfiguration("blur_ksize"),
+                "thresh": LaunchConfiguration("thresh"),
+                "morph_ksize": LaunchConfiguration("morph_ksize"),
+                "n_windows": LaunchConfiguration("n_windows"),
+                "margin": LaunchConfiguration("margin"),
+                "minpix": LaunchConfiguration("minpix"),
+                "kp": LaunchConfiguration("kp"),
+                "angle_bias_deg": LaunchConfiguration("angle_bias_deg"),
+                "roi_bottom_offset_ratio": LaunchConfiguration("roi_bottom_offset_ratio"),
+                "roi_height_ratio": LaunchConfiguration("roi_height_ratio"),
+                "min_component_area": LaunchConfiguration("min_component_area"),
+                "max_component_area": LaunchConfiguration("max_component_area"),
+                "max_component_width_px": LaunchConfiguration("max_component_width_px"),
+                "max_component_width_ratio": LaunchConfiguration("max_component_width_ratio"),
+                "component_intensity_limit": LaunchConfiguration("component_intensity_limit"),
+                "show_debug": LaunchConfiguration("show_debug"),
+                "publish_debug_image": LaunchConfiguration("publish_debug_image"),
+                "show_angle_curve": LaunchConfiguration("show_angle_curve"),
+                "angle_curve_history_size": LaunchConfiguration("angle_curve_history_size"),
+                "angle_curve_limit_deg": LaunchConfiguration("angle_curve_limit_deg"),
+            },
+            LaunchConfiguration("line_follow_params_file"),
+        ],
     )
 
-    core_process = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(core_launch),
-        launch_arguments={
-            "line_follow_params_file": LaunchConfiguration("line_follow_params_file"),
-            "runtime_params_file": LaunchConfiguration("runtime_params_file"),
-            "image_topic": LaunchConfiguration("image_topic"),
-            "image_msg_type": LaunchConfiguration("image_msg_type"),
-            "offset_px_topic": LaunchConfiguration("offset_px_topic"),
-            "offset_norm_topic": LaunchConfiguration("offset_norm_topic"),
-            "line_detected_topic": LaunchConfiguration("line_detected_topic"),
-            "serial_port": LaunchConfiguration("serial_port"),
-            "track_width_m": LaunchConfiguration("track_width_m"),
-            "show_debug": LaunchConfiguration("show_debug"),
-            "publish_debug_image": LaunchConfiguration("publish_debug_image"),
-            "show_angle_curve": LaunchConfiguration("show_angle_curve"),
-            "angle_curve_history_size": LaunchConfiguration("angle_curve_history_size"),
-            "angle_curve_limit_deg": LaunchConfiguration("angle_curve_limit_deg"),
-            "line_is_white": LaunchConfiguration("line_is_white"),
-            "blur_ksize": LaunchConfiguration("blur_ksize"),
-            "thresh": LaunchConfiguration("thresh"),
-            "morph_ksize": LaunchConfiguration("morph_ksize"),
-            "n_windows": LaunchConfiguration("n_windows"),
-            "margin": LaunchConfiguration("margin"),
-            "minpix": LaunchConfiguration("minpix"),
-            "kp": LaunchConfiguration("kp"),
-            "angle_bias_deg": LaunchConfiguration("angle_bias_deg"),
-            "roi_bottom_offset_ratio": LaunchConfiguration("roi_bottom_offset_ratio"),
-            "roi_height_ratio": LaunchConfiguration("roi_height_ratio"),
-            "min_component_area": LaunchConfiguration("min_component_area"),
-            "max_component_area": LaunchConfiguration("max_component_area"),
-            "max_component_width_px": LaunchConfiguration("max_component_width_px"),
-            "max_component_width_ratio": LaunchConfiguration("max_component_width_ratio"),
-            "component_intensity_limit": LaunchConfiguration("component_intensity_limit"),
-            "max_visual_angle_deg": LaunchConfiguration("max_visual_angle_deg"),
-            "heading_gain": LaunchConfiguration("heading_gain"),
-            "base_motor_rpm": LaunchConfiguration("base_motor_rpm"),
-            "line_follow_enabled": LaunchConfiguration("line_follow_enabled"),
-            "allow_reverse": LaunchConfiguration("allow_reverse"),
-            "command_timeout_sec": LaunchConfiguration("command_timeout_sec"),
-            "speed_update_period_sec": LaunchConfiguration("speed_update_period_sec"),
-            "offset_timeout_sec": LaunchConfiguration("offset_timeout_sec"),
-            "angle_lowpass_alpha": LaunchConfiguration("angle_lowpass_alpha"),
-            "angle_deadband_deg": LaunchConfiguration("angle_deadband_deg"),
-            "straight_angle_epsilon_deg": LaunchConfiguration("straight_angle_epsilon_deg"),
-            "max_motor_rpm_step_per_sec": LaunchConfiguration("max_motor_rpm_step_per_sec"),
-            "max_motor_rpm": LaunchConfiguration("max_motor_rpm"),
-            "arm_on_enable_detection_count": LaunchConfiguration("arm_on_enable_detection_count"),
-            "drive_wheel_diameter_m": LaunchConfiguration("drive_wheel_diameter_m"),
-            "track_pitch_m": LaunchConfiguration("track_pitch_m"),
-            "track_link_count": LaunchConfiguration("track_link_count"),
-            "left_motor_sign": LaunchConfiguration("left_motor_sign"),
-            "right_motor_sign": LaunchConfiguration("right_motor_sign"),
-            "left_slave": LaunchConfiguration("left_slave"),
-            "right_slave": LaunchConfiguration("right_slave"),
-            "min_speed_rpm": LaunchConfiguration("min_speed_rpm"),
-            "max_speed_rpm": LaunchConfiguration("max_speed_rpm"),
-            "baud_rate": LaunchConfiguration("baud_rate"),
-            "serial_timeout_sec": LaunchConfiguration("serial_timeout_sec"),
-            "auto_start": LaunchConfiguration("auto_start"),
-            "speed_status_topic": LaunchConfiguration("speed_status_topic"),
-            "start_driver": LaunchConfiguration("start_driver"),
-            "driver_command_timeout_sec": LaunchConfiguration("driver_command_timeout_sec"),
-            "write_retry_count": LaunchConfiguration("write_retry_count"),
-            "fail_safe_on_write_error": LaunchConfiguration("fail_safe_on_write_error"),
-            "max_consecutive_write_errors": LaunchConfiguration("max_consecutive_write_errors"),
-        }.items(),
+    model_process = Node(
+        package="line_follow",
+        executable="line_follow_motor_model_node",
+        output="screen",
+        parameters=[
+            {
+                "track_width_m": LaunchConfiguration("track_width_m"),
+                "line_detected_topic": LaunchConfiguration("line_detected_topic"),
+                "max_visual_angle_deg": LaunchConfiguration("max_visual_angle_deg"),
+                "heading_gain": LaunchConfiguration("heading_gain"),
+                "base_motor_rpm": LaunchConfiguration("base_motor_rpm"),
+                "enabled": LaunchConfiguration("line_follow_enabled"),
+                "allow_reverse": LaunchConfiguration("allow_reverse"),
+                "command_timeout_sec": LaunchConfiguration("command_timeout_sec"),
+                "offset_timeout_sec": LaunchConfiguration("offset_timeout_sec"),
+                "speed_update_period_sec": LaunchConfiguration("speed_update_period_sec"),
+                "angle_lowpass_alpha": LaunchConfiguration("angle_lowpass_alpha"),
+                "angle_deadband_deg": LaunchConfiguration("angle_deadband_deg"),
+                "straight_angle_epsilon_deg": LaunchConfiguration("straight_angle_epsilon_deg"),
+                "max_motor_rpm_step_per_sec": LaunchConfiguration("max_motor_rpm_step_per_sec"),
+                "max_motor_rpm": LaunchConfiguration("max_motor_rpm"),
+                "arm_on_enable_detection_count": LaunchConfiguration("arm_on_enable_detection_count"),
+                "drive_wheel_diameter_m": LaunchConfiguration("drive_wheel_diameter_m"),
+                "track_pitch_m": LaunchConfiguration("track_pitch_m"),
+                "track_link_count": LaunchConfiguration("track_link_count"),
+                "left_motor_sign": LaunchConfiguration("left_motor_sign"),
+                "right_motor_sign": LaunchConfiguration("right_motor_sign"),
+            },
+            LaunchConfiguration("line_follow_params_file"),
+        ],
+    )
+
+    driver_process = Node(
+        package="line_follow",
+        executable="motor_driver_control_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("start_driver")),
+        parameters=[
+            {
+                "serial_port": LaunchConfiguration("serial_port"),
+                "baud_rate": LaunchConfiguration("baud_rate"),
+                "serial_timeout_sec": LaunchConfiguration("serial_timeout_sec"),
+                "left_slave": LaunchConfiguration("left_slave"),
+                "right_slave": LaunchConfiguration("right_slave"),
+                "min_speed_rpm": LaunchConfiguration("min_speed_rpm"),
+                "max_speed_rpm": LaunchConfiguration("max_speed_rpm"),
+                "auto_start": LaunchConfiguration("auto_start"),
+                "speed_status_topic": LaunchConfiguration("speed_status_topic"),
+                "driver_command_timeout_sec": LaunchConfiguration("driver_command_timeout_sec"),
+                "write_retry_count": LaunchConfiguration("write_retry_count"),
+                "fail_safe_on_write_error": LaunchConfiguration("fail_safe_on_write_error"),
+                "max_consecutive_write_errors": LaunchConfiguration("max_consecutive_write_errors"),
+            },
+            LaunchConfiguration("runtime_params_file"),
+        ],
     )
 
     return LaunchDescription(
         [
             line_follow_params_file_arg,
             runtime_params_file_arg,
-            device_arg,
-            enable_websocket_arg,
-            enable_dashboard_arg,
             image_topic_arg,
             image_msg_type_arg,
             offset_px_topic_arg,
@@ -501,7 +496,8 @@ def generate_launch_description():
             write_retry_count_arg,
             fail_safe_on_write_error_arg,
             max_consecutive_write_errors_arg,
-            camera_launch,
-            core_process,
+            angle_process,
+            model_process,
+            driver_process,
         ]
     )

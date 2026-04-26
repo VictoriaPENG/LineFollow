@@ -1,49 +1,88 @@
 line_follow_angle_node:
   ros__parameters:
+    # 视觉输入话题。当前整机链路默认使用 hobot_codec 解码后的共享内存图像。
     image_topic: "/hbmem_img"
+    # 输入图像消息类型。RDK 上通常保持为 hbmem；若直接订阅普通图像可改为 raw。
     image_msg_type: "hbmem"
+    # 横向偏移像素量输出话题，供调试和记录使用。
     offset_px_topic: "/line_follow/line_offset_px"
+    # 横向偏移归一化输出话题，范围通常约为 [-1, 1]。
     offset_norm_topic: "/line_follow/line_offset_norm"
+    # 是否检测到有效引导线。供运动模型做使能和保护判断。
+    line_detected_topic: "/line_follow/line_detected"
+
+    # 目标线颜色。false 表示黑线白底，true 表示白线黑底。
     line_is_white: false
-    blur_ksize: 5
-    thresh: -1
-    morph_ksize: 3
+    # 高斯模糊核大小。增大可抑制噪声，但过大会吞掉细线。
+    blur_ksize: 3
+    # 二值化阈值。-1 表示使用 Otsu 自动阈值；固定光照场景可手动给值。
+    thresh: 60
+    # 形态学核大小。用于去小噪点、补小断裂。
+    morph_ksize: 1
+
+    # 滑动窗口层数。越大表示从下到上采样更密。
     n_windows: 9
-    margin: 180
-    minpix: 50
+    # 每层滑窗半宽，单位像素。线偏移大时可增大，误跟踪干扰时可减小。
+    margin: 85
+    # 单层窗口内判定“命中线”的最少非零像素数。
+    minpix: 12
+    # 调试建议转向量的比例系数，对最终电机控制影响很小。
     kp: 1.0
-    angle_bias_deg: 1.0
-    roi_bottom_offset_ratio: 0.25
-    roi_height_ratio: 0.25
-    min_component_area: 20
+    # 在视觉角度上附加的人工偏置，用于补偿相机安装误差。
+    angle_bias_deg: 0.0
+
+    # 检测 ROI 底边相对图像底部向上的偏移比例。
+    # 值越小越靠近图像底部，越大则向上裁掉更多近处区域。
+    roi_bottom_offset_ratio: 0.02
+    # 检测 ROI 高度占整幅图像高度的比例。
+    # 值越大，可看到更远的线，但也更容易引入远处噪声。
+    roi_height_ratio: 0.30
+    # 底部初始搜索带半宽比例。用于确定起始直方图搜索范围。
+    base_search_half_width_ratio: 0.12
+
+    # 连通域最小面积，小于该值的噪点会被过滤。
+    min_component_area: 12
+    # 连通域最大面积。0 表示不限制；可用于排除大块阴影或污渍。
     max_component_area: 0
+    # 连通域最大宽度像素。0 表示不限制。
     max_component_width_px: 0
-    max_component_width_ratio: 0.0
+    # 连通域最大宽度占图像宽度的比例。0 表示不限制。
+    max_component_width_ratio: 0.20
+    # 连通域灰度强度过滤阈值。负数表示关闭该过滤。
+    # 黑线模式下可用于只保留“更黑”的候选区域。
     component_intensity_limit: -1.0
+
+    # 是否弹出本地 OpenCV 调试窗口。板端无桌面时一般保持 false。
     show_debug: false
+    # 是否发布调试图像话题，推荐远程调试时保持开启。
     publish_debug_image: true
+    # 是否生成角度历史曲线图。
     show_angle_curve: true
+    # 角度曲线保留的历史帧数。
     angle_curve_history_size: 240
+    # 角度曲线显示的纵轴范围上限，单位度。
     angle_curve_limit_deg: 50.0
 
 line_follow_motor_model_node:
   ros__parameters:
     angle_topic: "/line_follow/line_angle_deg"
+    line_detected_topic: "/line_follow/line_detected"
     speed_topic: "/motor_speed_cmd"
     publish_debug_topic: true
-    max_visual_angle_deg: 20.0
+    max_visual_angle_deg: 50.0
     heading_gain: 20.0
     base_motor_rpm: 900.0
     allow_reverse: false
     command_timeout_sec: 0.5
     fallback_straight_when_no_angle: true
-    speed_update_period_sec: 2.0
+    speed_update_period_sec: 0.1
     angle_lowpass_alpha: 0.35
     angle_deadband_deg: 2.5
     straight_angle_epsilon_deg: 1.5
-    max_motor_rpm_step_per_sec: 900.0
-    max_motor_rpm: 1200.0
-    steering_sign: -1.0
+    max_motor_rpm_step_per_sec: 1500.0
+    max_motor_rpm: 3000.0
+    steering_sign: 1.0
+    arm_on_enable_detection_count: 0
     track_width_m: 0.577
     drive_wheel_diameter_m: 0.18
     track_pitch_m: 0.06

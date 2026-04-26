@@ -6,25 +6,20 @@ remote_long_press_start_line_follow_node:
     debug_inputs_only: false
     hold_seconds: 0.5
     poll_hz: 20.0
-    debounce_activate_count: 5
+    debounce_activate_count: 1
     debounce_deactivate_count: 1
-    autostart_line_follow_stack: true
-    autostart_driver_process: true
     allow_inputs_without_pull_resistors: true
-    launch_command: "ros2 launch line_follow line_follow_system.launch.py line_follow_enabled:=false start_driver:=false"
     speed_topic: "/motor_speed_cmd"
     override_active_topic: "/joystick_override_active"
+    line_follow_enable_topic: "/line_follow/set_enabled"
     forward_left_rpm: -900.0
     forward_right_rpm: 900.0
     line_follow_node_name: "/line_follow_motor_model_node"
-    adopt_existing_line_follow_stack: true
-    line_follow_enable_timeout_sec: 2.0
-    line_follow_disable_timeout_sec: 0.2
-    driver_launch_command: "ros2 run line_follow motor_driver_control_node"
     auto_record_runtime_data: true
     record_root_dir: "/userdata/test_logs"
     record_rosbag: true
     save_params_script: "/userdata/dev_ws/src/originbot/Line_follow/board_tools/save_runtime_params.sh"
+    gpio_read_error_limit: 3
 
 joystick_drive_node:
   ros__parameters:
@@ -36,7 +31,8 @@ joystick_drive_node:
     right_pin: 16
     use_board_numbering: true
     debug_inputs_only: false
-    debounce_activate_count: 5
+    allow_inputs_without_pull_resistors: true
+    debounce_activate_count: 1
     debounce_deactivate_count: 1
     forward_left_rpm: 900.0
     forward_right_rpm: -900.0
@@ -47,8 +43,6 @@ joystick_drive_node:
     turn_right_left_rpm: 900.0
     turn_right_right_rpm: 900.0
     publish_hz: 20.0
-    autostart_driver_process: false
-    driver_launch_command: "ros2 run line_follow motor_driver_control_node"
 
 motor_driver_control_node:
   ros__parameters:

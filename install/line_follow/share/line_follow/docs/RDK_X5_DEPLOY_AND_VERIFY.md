@@ -2,13 +2,19 @@
 
 本文档用于将本 ROS2 Python 包部署到 RDK X5，并按阶段完成验证，避免一次性全量启动后难以排障。
 
+以下说明已按当前代码状态更新：
+
+- `line_follow_system.launch.py` 默认不再启动 websocket 页面和 `web_debug_dashboard_node`
+- 如果需要网页图像和调试页，需显式传 `enable_websocket:=true enable_dashboard:=true`
+- `remote_long_press_start_line_follow_node` 当前只做遥控模式仲裁，不再负责自动拉起整套巡线栈
+
 如果你当前还在开发机上单独调试视觉算法，建议先阅读：
 
 - `LOCAL_VISUAL_DEBUG.md`
 
 ## 1. 目录内容
 
-本方案已整理为标准 `ament_python` 包，包名为 `line_follow`。当前仓库源码目录是 `src/`，安装后的 Python 包名是 `line_follow`。包含 3 个核心节点和 1 个整系统 launch：
+本方案已整理为标准 `ament_python` 包，包名为 `line_follow`。当前仓库源码目录是 `src/`，安装后的 Python 包名是 `line_follow`。包含 3 个核心节点和 2 个常用 launch：
 
 - `src/angle_node.py`
   视觉巡线角度检测，发布 `/line_follow/line_angle_deg`
@@ -17,7 +23,9 @@
 - `src/motor_driver_control.py`
   订阅 `/motor_speed_cmd`，通过 Modbus RTU 下发给驱动器
 - `launch/line_follow_system.launch.py`
-  一次启动相机、角度检测、运动模型、驱动控制，并可透传关键运行参数
+  一次启动相机、解码/共享内存链路、角度检测、运动模型、驱动控制，并可透传关键运行参数
+- `launch/usb_cam_web.launch.py`
+  单独启动相机链路，并可按参数决定是否启用 websocket 页面和调试 dashboard
 
 ## 2. 前提条件
 
@@ -32,7 +40,6 @@ RDK X5 上需要具备以下运行环境：
   - `serial` 或 `pyserial`
 - 已安装并可用的 ROS2 包：
   - `hobot_usb_cam`
-  - `websocket`
   - `hobot_codec`
   - `hobot_shm`
 
@@ -167,13 +174,29 @@ source /userdata/dev_ws/install/setup.bash
 
 如果只是修改了 launch、Python 源码或文档，仍然建议重新执行一次 `colcon build --packages-select line_follow`，这样安装目录中的脚本会同步到最新版本。
 
-## 4.2 当前整系统 launch 已暴露的关键参数
+## 4.2 当前整系统 launch 的关键行为和参数
 
-当前 `line_follow_system.launch.py` 已与三个节点的常用部署参数对齐，现场可直接通过 `ros2 launch` 覆盖：
+当前 `line_follow_system.launch.py` 的默认行为：
 
-- 视觉节点：
+- 启动 USB 相机、`/image -> /hbmem_img` 图像链路和巡线核心节点
+- 默认不启动 websocket 页面
+- 默认不启动 `web_debug_dashboard_node`
+
+如需网页图像和调试页，必须显式传：
+
+```bash
+enable_websocket:=true enable_dashboard:=true
+```
+
+当前现场最常改的参数可以分为四组：
+
+- 图像链路：
   - `device`
+  - `enable_websocket`
+  - `enable_dashboard`
+- 视觉节点：
   - `image_topic`
+  - `image_msg_type`
   - `line_is_white`
   - `blur_ksize`
   - `thresh`
@@ -181,8 +204,9 @@ source /userdata/dev_ws/install/setup.bash
   - `n_windows`
   - `margin`
   - `minpix`
-  - `kp`
-  - `roi_y_start_ratio`
+  - `angle_bias_deg`
+  - `roi_bottom_offset_ratio`
+  - `roi_height_ratio`
   - `min_component_area`
   - `max_component_area`
   - `max_component_width_px`
@@ -193,20 +217,27 @@ source /userdata/dev_ws/install/setup.bash
   - `show_angle_curve`
   - `angle_curve_history_size`
   - `angle_curve_limit_deg`
-
-当前默认配置中，`margin` 已调整为 `300`，用于扩大滑动窗口的横向搜索范围。
 - 运动模型节点：
   - `track_width_m`
   - `max_visual_angle_deg`
   - `heading_gain`
-  - `base_speed_ratio`
-  - `speed_reduce_gain`
-  - `min_output_rpm`
+  - `base_motor_rpm`
+  - `line_follow_enabled`
   - `allow_reverse`
   - `command_timeout_sec`
+  - `speed_update_period_sec`
+  - `offset_timeout_sec`
+  - `angle_lowpass_alpha`
+  - `angle_deadband_deg`
+  - `straight_angle_epsilon_deg`
+  - `max_motor_rpm_step_per_sec`
+  - `max_motor_rpm`
+  - `arm_on_enable_detection_count`
   - `drive_wheel_diameter_m`
   - `track_pitch_m`
   - `track_link_count`
+  - `left_motor_sign`
+  - `right_motor_sign`
 - 驱动控制节点：
   - `serial_port`
   - `baud_rate`
@@ -216,6 +247,10 @@ source /userdata/dev_ws/install/setup.bash
   - `min_speed_rpm`
   - `max_speed_rpm`
   - `auto_start`
+  - `driver_command_timeout_sec`
+  - `write_retry_count`
+  - `fail_safe_on_write_error`
+  - `max_consecutive_write_errors`
 
 说明：
 
@@ -231,7 +266,7 @@ source /userdata/dev_ws/install/setup.bash
 先只启动摄像头与 web：
 
 ```bash
-ros2 launch line_follow usb_cam_web.launch.py device:=/dev/video8
+ros2 launch line_follow usb_cam_web.launch.py device:=/dev/video0
 ```
 
 另开一个终端检查话题：
@@ -439,7 +474,7 @@ ros2 topic pub --once /motor_speed_cmd std_msgs/msg/Float32MultiArray "{data: [3
 
 ```bash
 ros2 launch line_follow line_follow_system.launch.py \
-  device:=/dev/video8 \
+  device:=/dev/video0 \
   image_topic:=/hbmem_img \
   image_msg_type:=hbmem \
   serial_port:=/dev/ttyUSB0 \

@@ -27,6 +27,7 @@ from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
+from std_msgs.msg import Bool
 from std_msgs.msg import Float32
 
 try:
@@ -163,6 +164,7 @@ def detect_line_and_angle(
     kp=1.0,
     roi_bottom_offset_ratio=0.25,
     roi_height_ratio=0.25,
+    base_search_half_width_ratio=0.25,
     draw=False,
 ):
     """
@@ -202,7 +204,17 @@ def detect_line_and_angle(
                 2,
             )
         return False, 0.0, 0.0, 0.0, 0.0, vis
-    base_x = int(np.argmax(hist))
+    image_center_x = 0.5 * float(w - 1)
+    base_search_half_width_ratio = min(0.49, max(0.05, float(base_search_half_width_ratio)))
+    half_width = max(1, int(round(w * base_search_half_width_ratio)))
+    center_idx = int(round(image_center_x))
+    center_left = max(0, center_idx - half_width)
+    center_right = min(w, center_idx + half_width + 1)
+    center_hist = hist[center_left:center_right]
+    if center_hist.size > 0 and int(np.max(center_hist)) > 0:
+        base_x = int(np.argmax(center_hist)) + center_left
+    else:
+        base_x = int(np.argmax(hist))
 
     # 滑动窗口仅在检测 ROI 内从下往上逐窗跟踪线条中心。
     nw = max(3, int(n_windows))
@@ -272,7 +284,6 @@ def detect_line_and_angle(
     k = 1e6 if abs(vy) < eps else (vx / vy)
     y_bottom = h - 1
     x_bottom = float(x0f + (y_bottom - y0f) * k)
-    image_center_x = 0.5 * float(w - 1)
     offset_px = x_bottom - image_center_x
     offset_norm = 0.0 if image_center_x <= 0.0 else max(-1.0, min(1.0, offset_px / image_center_x))
 
@@ -363,9 +374,10 @@ class LineFollowAngleNode(Node):
         self.declare_parameter("margin", 180)
         self.declare_parameter("minpix", 50)
         self.declare_parameter("kp", 1.0)
-        self.declare_parameter("angle_bias_deg", -10.0)
+        self.declare_parameter("angle_bias_deg", 0.0)
         self.declare_parameter("roi_bottom_offset_ratio", 0.25)
         self.declare_parameter("roi_height_ratio", 0.25)
+        self.declare_parameter("base_search_half_width_ratio", 0.25)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("publish_debug_image", True)
         self.declare_parameter("debug_binary_topic", "/line_follow/debug_binary")
@@ -373,6 +385,7 @@ class LineFollowAngleNode(Node):
         self.declare_parameter("debug_angle_curve_topic", "/line_follow/debug_angle_curve")
         self.declare_parameter("offset_px_topic", "/line_follow/line_offset_px")
         self.declare_parameter("offset_norm_topic", "/line_follow/line_offset_norm")
+        self.declare_parameter("line_detected_topic", "/line_follow/line_detected")
         self.declare_parameter("show_angle_curve", True)
         self.declare_parameter("angle_curve_history_size", 240)
         self.declare_parameter("angle_curve_limit_deg", 45.0)
@@ -415,6 +428,11 @@ class LineFollowAngleNode(Node):
         self.pub_angle = self.create_publisher(Float32, "/line_follow/line_angle_deg", 10)
         self.pub_offset_px = self.create_publisher(Float32, self.offset_px_topic, 10)
         self.pub_offset_norm = self.create_publisher(Float32, self.offset_norm_topic, 10)
+        self.pub_line_detected = self.create_publisher(
+            Bool,
+            str(self.get_parameter("line_detected_topic").value),
+            10,
+        )
         self._refresh_debug_runtime()
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
@@ -600,6 +618,9 @@ class LineFollowAngleNode(Node):
         angle_bias_deg = float(self.get_parameter("angle_bias_deg").value)
         roi_bottom_offset_ratio = float(self.get_parameter("roi_bottom_offset_ratio").value)
         roi_height_ratio = float(self.get_parameter("roi_height_ratio").value)
+        base_search_half_width_ratio = float(
+            self.get_parameter("base_search_half_width_ratio").value
+        )
         show = bool(self.get_parameter("show_debug").value)
         publish_debug_image = self.publish_debug_image_enabled
         show_angle_curve = bool(self.get_parameter("show_angle_curve").value)
@@ -626,6 +647,7 @@ class LineFollowAngleNode(Node):
             kp=kp,
             roi_bottom_offset_ratio=roi_bottom_offset_ratio,
             roi_height_ratio=roi_height_ratio,
+            base_search_half_width_ratio=base_search_half_width_ratio,
             draw=need_detect_vis,
         )
         angle_deg += angle_bias_deg
@@ -665,7 +687,8 @@ class LineFollowAngleNode(Node):
                     f"streak={self.detect_fail_streak}, white_ratio={white_ratio:.3f}, "
                     f"line_is_white={line_is_white}, thresh={thresh}, margin={margin}, "
                     f"minpix={minpix}, roi_bottom_offset_ratio={roi_bottom_offset_ratio:.2f}, "
-                    f"roi_height_ratio={roi_height_ratio:.2f}"
+                    f"roi_height_ratio={roi_height_ratio:.2f}, "
+                    f"base_search_half_width_ratio={base_search_half_width_ratio:.2f}"
                 )
 
             # 丢线时持续发布“直行”保底命令，避免下游因无角度输入而停住。
@@ -684,6 +707,10 @@ class LineFollowAngleNode(Node):
             m4 = Float32()
             m4.data = 0.0
             self.pub_offset_norm.publish(m4)
+
+        detected_msg = Bool()
+        detected_msg.data = bool(ok)
+        self.pub_line_detected.publish(detected_msg)
 
         header = getattr(msg, "header", None)
 

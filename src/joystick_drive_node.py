@@ -14,10 +14,8 @@ active, the node publishes a stop command.
 
 from __future__ import annotations
 
-import os
-import signal
-import subprocess
 import sys
+import time
 from typing import Dict, Tuple
 
 import rclpy
@@ -33,7 +31,7 @@ GPIO = load_gpio_module()
 
 FIXED_ACTIVE_LOW = True
 FIXED_USE_PULL_UP = True
-FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = True
+FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = False
 
 
 class JoystickDriveNode(Node):
@@ -50,6 +48,10 @@ class JoystickDriveNode(Node):
         self.declare_parameter("right_pin", 16)
         self.declare_parameter("use_board_numbering", True)
         self.declare_parameter("debug_inputs_only", False)
+        self.declare_parameter(
+            "allow_inputs_without_pull_resistors",
+            FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS,
+        )
         self.declare_parameter("debounce_activate_count", 5)
         self.declare_parameter("debounce_deactivate_count", 1)
         self.declare_parameter("forward_left_rpm", 900.0)
@@ -61,11 +63,9 @@ class JoystickDriveNode(Node):
         self.declare_parameter("turn_right_left_rpm", 900.0)
         self.declare_parameter("turn_right_right_rpm", 900.0)
         self.declare_parameter("publish_hz", 10.0)
-        self.declare_parameter("autostart_driver_process", False)
-        self.declare_parameter(
-            "driver_launch_command",
-            "ros2 run line_follow motor_driver_control_node",
-        )
+        self.declare_parameter("gpio_retry_attempts", 10)
+        self.declare_parameter("gpio_retry_interval_sec", 0.2)
+        self.declare_parameter("gpio_retry_backoff_sec", 5.0)
 
         self.speed_topic = str(self.get_parameter("speed_topic").value)
         self.override_active_topic = str(self.get_parameter("override_active_topic").value)
@@ -76,7 +76,9 @@ class JoystickDriveNode(Node):
         self.use_board_numbering = bool(self.get_parameter("use_board_numbering").value)
         self.debug_inputs_only = bool(self.get_parameter("debug_inputs_only").value)
         self.active_low = FIXED_ACTIVE_LOW
-        self.allow_inputs_without_pull_resistors = FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS
+        self.allow_inputs_without_pull_resistors = bool(
+            self.get_parameter("allow_inputs_without_pull_resistors").value
+        )
         debounce_activate_count = int(self.get_parameter("debounce_activate_count").value)
         debounce_deactivate_count = int(self.get_parameter("debounce_deactivate_count").value)
         self.forward_cmd = (
@@ -96,10 +98,9 @@ class JoystickDriveNode(Node):
             float(self.get_parameter("turn_right_right_rpm").value),
         )
         publish_hz = max(1.0, float(self.get_parameter("publish_hz").value))
-        self.autostart_driver_process = bool(
-            self.get_parameter("autostart_driver_process").value
-        )
-        self.driver_launch_command = str(self.get_parameter("driver_launch_command").value)
+        self.gpio_retry_attempts = max(1, int(self.get_parameter("gpio_retry_attempts").value))
+        self.gpio_retry_interval_sec = max(0.05, float(self.get_parameter("gpio_retry_interval_sec").value))
+        self.gpio_retry_backoff_sec = max(0.5, float(self.get_parameter("gpio_retry_backoff_sec").value))
 
         self.pin_to_action = {
             self.forward_pin: "forward",
@@ -128,14 +129,14 @@ class JoystickDriveNode(Node):
         self.last_cmd = (0.0, 0.0)
         self.last_override_active = False
         self.last_debug_snapshot = None
-        self._driver_child = None
-        self._shutting_down = False
         self._override_publish_period_sec = 0.2
         self._last_override_publish_monotonic = 0.0
+        self._gpio_ready = False
+        self._gpio_retry_count = 0
+        self._next_gpio_retry_monotonic = 0.0
+        self._last_gpio_error = ""
 
-        self._setup_gpio()
-        if self.autostart_driver_process:
-            self._start_driver_process()
+        self._ensure_gpio_ready(force=True)
         self.timer = self.create_timer(1.0 / publish_hz, self._poll_inputs)
 
         self.get_logger().info(
@@ -146,9 +147,11 @@ class JoystickDriveNode(Node):
             f"override_active_topic={self.override_active_topic}, "
             f"debounce_activate_count={debounce_activate_count}, "
             f"debounce_deactivate_count={debounce_deactivate_count}, "
+            f"gpio_retry_attempts={self.gpio_retry_attempts}, "
+            f"gpio_retry_interval_sec={self.gpio_retry_interval_sec:.2f}, "
+            f"gpio_retry_backoff_sec={self.gpio_retry_backoff_sec:.2f}, "
             f"forward_cmd={self.forward_cmd}, reverse_cmd={self.reverse_cmd}, "
-            f"turn_left_cmd={self.turn_left_cmd}, turn_right_cmd={self.turn_right_cmd}, "
-            f"autostart_driver_process={self.autostart_driver_process}"
+            f"turn_left_cmd={self.turn_left_cmd}, turn_right_cmd={self.turn_right_cmd}"
         )
         self._publish_command((0.0, 0.0))
         self._publish_override_active(False)
@@ -181,67 +184,57 @@ class JoystickDriveNode(Node):
             for pin in pins:
                 GPIO.setup(pin, GPIO.IN)
 
+    def _mark_gpio_unavailable(self, reason: str) -> None:
+        self._gpio_ready = False
+        self._last_gpio_error = str(reason)
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
+        self._publish_command((0.0, 0.0))
+        self._publish_override_active(False, force=True)
+
+    def _ensure_gpio_ready(self, force: bool = False) -> bool:
+        if self._gpio_ready:
+            return True
+
+        now = time.monotonic()
+        if not force and now < self._next_gpio_retry_monotonic:
+            return False
+
+        try:
+            self._setup_gpio()
+        except Exception as exc:
+            self._gpio_retry_count += 1
+            self._last_gpio_error = str(exc)
+            if self._gpio_retry_count >= self.gpio_retry_attempts:
+                self._next_gpio_retry_monotonic = now + self.gpio_retry_backoff_sec
+                self.get_logger().error(
+                    f"joystick GPIO init failed {self._gpio_retry_count}/{self.gpio_retry_attempts}: {exc}; "
+                    f"retry after {self.gpio_retry_backoff_sec:.1f}s"
+                )
+                self._gpio_retry_count = 0
+            else:
+                self._next_gpio_retry_monotonic = now + self.gpio_retry_interval_sec
+                self.get_logger().warn(
+                    f"joystick GPIO init failed {self._gpio_retry_count}/{self.gpio_retry_attempts}: {exc}; "
+                    f"retry in {self.gpio_retry_interval_sec:.1f}s"
+                )
+            self._mark_gpio_unavailable(exc)
+            return False
+
+        self._gpio_ready = True
+        self._gpio_retry_count = 0
+        self._next_gpio_retry_monotonic = 0.0
+        if self._last_gpio_error:
+            self.get_logger().info("joystick GPIO recovered")
+            self._last_gpio_error = ""
+        return True
+
     def _read_pin(self, pin: int) -> Tuple[int, bool]:
         raw_level = int(GPIO.input(pin))
         raw_active = (raw_level == 0) if self.active_low else (raw_level != 0)
         return raw_level, raw_active
-
-    def _start_driver_process(self) -> None:
-        if self._shutting_down:
-            return
-        if self._driver_child is not None and self._driver_child.poll() is None:
-            return
-
-        self.get_logger().info(f"starting motor driver process: {self.driver_launch_command}")
-        self._driver_child = subprocess.Popen(
-            ["bash", "-lc", self.driver_launch_command],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-        )
-
-    def _ensure_driver_process(self) -> bool:
-        if self._shutting_down:
-            return False
-        if not self.autostart_driver_process:
-            return True
-        if self._driver_child is not None and self._driver_child.poll() is None:
-            return True
-        self._start_driver_process()
-        return self._driver_child is not None and self._driver_child.poll() is None
-
-    def _check_driver_process(self) -> None:
-        if self._driver_child is None:
-            return
-
-        exit_code = self._driver_child.poll()
-        if exit_code is None:
-            return
-
-        self.get_logger().error(f"motor driver process exited with code {exit_code}")
-        self._driver_child = None
-
-    def _stop_process(self, child, label: str) -> None:
-        if child is None or child.poll() is not None:
-            return
-
-        try:
-            self.get_logger().info(f"stopping {label}")
-            pgid = os.getpgid(child.pid)
-            os.killpg(pgid, signal.SIGINT)
-            child.wait(timeout=5.0)
-        except Exception:
-            try:
-                pgid = os.getpgid(child.pid)
-                os.killpg(pgid, signal.SIGTERM)
-            except Exception:
-                pass
-
-    def _stop_driver_process(self) -> None:
-        if self._driver_child is None:
-            return
-        self._stop_process(self._driver_child, "motor driver process")
-        self._driver_child = None
 
     def _read_inputs(self) -> Dict[str, Tuple[int, bool, bool]]:
         snapshot = {}
@@ -252,13 +245,16 @@ class JoystickDriveNode(Node):
         return snapshot
 
     def _poll_inputs(self) -> None:
-        self._check_driver_process()
-        if not self._ensure_driver_process():
-            self.get_logger().error("motor driver process is not running, forcing stop output")
-            self._publish_command((0.0, 0.0))
+        if not self._ensure_gpio_ready():
             return
 
-        snapshot = self._read_inputs()
+        try:
+            snapshot = self._read_inputs()
+        except Exception as exc:
+            self.get_logger().error(f"joystick GPIO read failed: {exc}")
+            self._mark_gpio_unavailable(exc)
+            self._next_gpio_retry_monotonic = 0.0
+            return
         active_actions = [
             action for action, (_, _, filtered_active) in snapshot.items() if filtered_active
         ]
@@ -318,17 +314,12 @@ class JoystickDriveNode(Node):
         self._last_override_publish_monotonic = now
 
     def destroy_node(self) -> bool:
-        self._shutting_down = True
         try:
             self._publish_override_active(False)
         except Exception:
             pass
         try:
             self._publish_command((0.0, 0.0))
-        except Exception:
-            pass
-        try:
-            self._stop_driver_process()
         except Exception:
             pass
         try:

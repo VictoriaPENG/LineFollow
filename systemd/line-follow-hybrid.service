@@ -1,0 +1,17 @@
+[Unit]
+Description=Line Follow Hybrid Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/userdata/dev_ws
+ExecStart=/userdata/dev_ws/start_line_follow_hybrid.sh
+Restart=always
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

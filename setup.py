@@ -24,7 +24,7 @@ setup(
         (os.path.join("share", package_name, "board_tools"), glob("board_tools/*.sh")),
     ],
     install_requires=["setuptools"],
-    zip_safe=True,
+    zip_safe=False,
     maintainer="yunbo",
     maintainer_email="support@example.com",
     description="Vision-based line following package for OriginBot tracked platform.",

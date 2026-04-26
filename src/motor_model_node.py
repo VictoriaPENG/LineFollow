@@ -18,9 +18,9 @@
 
 import math
 
-from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Bool
 from std_msgs.msg import Float32
 from std_msgs.msg import Float32MultiArray
 
@@ -33,7 +33,9 @@ class LineFollowMotorModelNode(Node):
 
         # 输入/输出话题。
         self.declare_parameter("angle_topic", "/line_follow/line_angle_deg")
+        self.declare_parameter("line_detected_topic", "/line_follow/line_detected")
         self.declare_parameter("speed_topic", "/motor_speed_cmd")
+        self.declare_parameter("enable_topic", "/line_follow/set_enabled")
         self.declare_parameter("publish_debug_topic", True)
         self.declare_parameter("enabled", True)
 
@@ -43,14 +45,16 @@ class LineFollowMotorModelNode(Node):
         self.declare_parameter("base_motor_rpm", 900.0)
         self.declare_parameter("allow_reverse", False)
         self.declare_parameter("command_timeout_sec", 0.5)
+        self.declare_parameter("offset_timeout_sec", 0.3)
         self.declare_parameter("fallback_straight_when_no_angle", True)
-        self.declare_parameter("speed_update_period_sec", 2.0)
+        self.declare_parameter("speed_update_period_sec", 0.1)
         self.declare_parameter("angle_lowpass_alpha", 0.35)
         self.declare_parameter("angle_deadband_deg", 2.5)
         self.declare_parameter("straight_angle_epsilon_deg", 1.5)
-        self.declare_parameter("max_motor_rpm_step_per_sec", 900.0)
-        self.declare_parameter("max_motor_rpm", 1200.0)
+        self.declare_parameter("max_motor_rpm_step_per_sec", 1500.0)
+        self.declare_parameter("max_motor_rpm", 3000.0)
         self.declare_parameter("steering_sign", 1.0)
+        self.declare_parameter("arm_on_enable_detection_count", 3)
 
         # 底盘机械参数。
         self.declare_parameter("track_width_m", 0.577)
@@ -82,6 +86,9 @@ class LineFollowMotorModelNode(Node):
         self.held_left_rpm = 0.0
         self.held_right_rpm = 0.0
         self.have_held_command = False
+        self.line_detected = False
+        self.enable_arm_required = self.enabled and self.arm_on_enable_detection_count > 0
+        self.enable_detect_streak = 0
 
         # 主输出：左右电机目标速度。
         self.speed_pub = self.create_publisher(Float32MultiArray, self.speed_topic, 10)
@@ -93,13 +100,25 @@ class LineFollowMotorModelNode(Node):
             self.debug_delta_pub = self.create_publisher(Float32, "/line_follow/delta_motor_rpm", 10)
 
         self.sub = self.create_subscription(Float32, self.angle_topic, self.on_angle, 10)
+        self.line_detected_sub = self.create_subscription(
+            Bool,
+            self.line_detected_topic,
+            self.on_line_detected,
+            10,
+        )
+        self.enable_sub = self.create_subscription(
+            Bool,
+            self.enable_topic,
+            self.on_enable_command,
+            10,
+        )
         # 定时器用于输入超时保护，避免相机或视觉异常时电机继续保持旧命令。
         self.timeout_timer = self.create_timer(0.1, self.on_timeout_check)
-        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self.get_logger().info(
             "motor model ready: "
-            f"angle_topic={self.angle_topic}, speed_topic={self.speed_topic}, "
+            f"angle_topic={self.angle_topic}, line_detected_topic={self.line_detected_topic}, "
+            f"speed_topic={self.speed_topic}, enable_topic={self.enable_topic}, "
             f"gear_ratio={self.gear_ratio:.2f}, base_motor_rpm={self.base_motor_rpm:.1f}, "
             f"track_width_m={self.track_width_m:.3f}, wheel_diameter_m={self.drive_wheel_diameter_m:.3f}, "
             f"allow_reverse={self.allow_reverse}, left_motor_sign={self.left_motor_sign:.0f}, "
@@ -107,13 +126,38 @@ class LineFollowMotorModelNode(Node):
             f"steering_sign={self.steering_sign:.0f}, "
             f"angle_lowpass_alpha={self.angle_lowpass_alpha:.2f}, angle_deadband_deg={self.angle_deadband_deg:.2f}, "
             f"speed_update_period_sec={self.speed_update_period_sec:.2f}, "
-            f"max_motor_rpm_step_per_sec={self.max_motor_rpm_step_per_sec:.1f}"
+            f"max_motor_rpm_step_per_sec={self.max_motor_rpm_step_per_sec:.1f}, "
+            f"arm_on_enable_detection_count={self.arm_on_enable_detection_count}"
         )
+
+    def _reset_control_state(self) -> None:
+        """重置控制缓存，确保重新使能后不会沿用旧速度或旧滤波状态。"""
+        self.last_angle_stamp = None
+        self.latest_angle_deg = None
+        self.filtered_angle_deg = None
+        self.last_command_stamp = None
+        self.last_left_rpm = 0.0
+        self.last_right_rpm = 0.0
+        self.last_speed_update_stamp = None
+        self.held_left_rpm = 0.0
+        self.held_right_rpm = 0.0
+        self.have_held_command = False
+
+    def _set_enable_arm_state(self, armed: bool) -> None:
+        """控制重新使能后的角度放行状态。"""
+        if armed:
+            self.enable_arm_required = False
+            self.enable_detect_streak = 0
+        else:
+            self.enable_arm_required = self.arm_on_enable_detection_count > 0
+            self.enable_detect_streak = 0
 
     def _load_static_topics(self):
         """加载需要在启动阶段固定下来的话题类参数。"""
         self.angle_topic = str(self.get_parameter("angle_topic").value)
+        self.line_detected_topic = str(self.get_parameter("line_detected_topic").value)
         self.speed_topic = str(self.get_parameter("speed_topic").value)
+        self.enable_topic = str(self.get_parameter("enable_topic").value)
         self.publish_debug_topic = bool(self.get_parameter("publish_debug_topic").value)
         self.enabled = bool(self.get_parameter("enabled").value)
 
@@ -135,6 +179,9 @@ class LineFollowMotorModelNode(Node):
             "max_motor_rpm_step_per_sec": float(self.get_parameter("max_motor_rpm_step_per_sec").value),
             "max_motor_rpm": float(self.get_parameter("max_motor_rpm").value),
             "steering_sign": float(self.get_parameter("steering_sign").value),
+            "arm_on_enable_detection_count": int(
+                self.get_parameter("arm_on_enable_detection_count").value
+            ),
             "track_width_m": float(self.get_parameter("track_width_m").value),
             "drive_wheel_diameter_m": float(self.get_parameter("drive_wheel_diameter_m").value),
             "track_pitch_m": float(self.get_parameter("track_pitch_m").value),
@@ -162,6 +209,7 @@ class LineFollowMotorModelNode(Node):
         self.max_motor_rpm_step_per_sec = max(0.0, float(values["max_motor_rpm_step_per_sec"]))
         self.max_motor_rpm = max(0.0, float(values["max_motor_rpm"]))
         self.steering_sign = 1.0 if float(values["steering_sign"]) >= 0.0 else -1.0
+        self.arm_on_enable_detection_count = max(0, int(values["arm_on_enable_detection_count"]))
         self.track_width_m = max(0.05, float(values["track_width_m"]))
         self.drive_wheel_diameter_m = max(0.01, float(values["drive_wheel_diameter_m"]))
         self.track_pitch_m = max(0.001, float(values["track_pitch_m"]))
@@ -192,43 +240,27 @@ class LineFollowMotorModelNode(Node):
             value = max(-limit, min(limit, value))
         return value
 
-    def _on_set_parameters(self, params):
-        """允许运行时刷新控制参数，话题结构类参数仍要求重启节点。"""
-        static_params = {"angle_topic", "speed_topic", "publish_debug_topic"}
-        overrides = {}
+    def _set_enabled_state(self, enabled: bool) -> None:
+        previous_enabled = self.enabled
+        self.enabled = bool(enabled)
+        if not self.enabled:
+            self.publish_speed(0.0, 0.0)
+            self._reset_control_state()
+            self._set_enable_arm_state(armed=False)
+        elif not previous_enabled:
+            # 重新使能时先清空旧角度/旧速度，让新的视觉输入重新接管。
+            self._reset_control_state()
+            self._set_enable_arm_state(armed=False)
+            self.publish_speed(0.0, 0.0)
+        elif self.arm_on_enable_detection_count > 0:
+            self._set_enable_arm_state(armed=False)
 
-        for param in params:
-            if param.name in static_params:
-                return SetParametersResult(
-                    successful=False,
-                    reason=f"{param.name} requires node restart because publishers/subscriptions are already created",
-                )
-            overrides[param.name] = param.value
-
-        try:
-            self._refresh_runtime_parameters(overrides)
-        except (TypeError, ValueError) as exc:
-            return SetParametersResult(successful=False, reason=str(exc))
-
-        if "enabled" in overrides:
-            self.enabled = bool(overrides["enabled"])
-            if not self.enabled:
-                self.publish_speed(0.0, 0.0)
-                self.last_angle_stamp = None
-                self.latest_angle_deg = None
-                self.last_command_stamp = None
-                self.last_left_rpm = 0.0
-                self.last_right_rpm = 0.0
-                self.last_speed_update_stamp = None
-                self.held_left_rpm = 0.0
-                self.held_right_rpm = 0.0
-                self.have_held_command = False
-                self.filtered_angle_deg = None
-
-        if overrides:
-            changed = ", ".join(sorted(overrides.keys()))
-            self.get_logger().info(f"runtime parameters updated: {changed}")
-        return SetParametersResult(successful=True)
+    def on_enable_command(self, msg: Bool) -> None:
+        desired = bool(msg.data)
+        if desired == self.enabled:
+            return
+        self._set_enabled_state(desired)
+        self.get_logger().info(f"line-follow enabled set to {desired} by topic command")
 
     def angle_to_motor_rpm(self, angle_deg: float):
         """
@@ -350,8 +382,27 @@ class LineFollowMotorModelNode(Node):
         self.latest_angle_deg = self._sanitize_scalar(msg.data, default=0.0, limit=self.max_visual_angle_deg)
         self.last_angle_stamp = self.get_clock().now()
 
+        if self.enable_arm_required:
+            return
+
         if not self.have_held_command:
             self.update_held_angle_command(self.latest_angle_deg, filtered=True)
+
+    def on_line_detected(self, msg: Bool):
+        """重新使能后要求连续若干帧检测成功，再允许角度控制放行。"""
+        self.line_detected = bool(msg.data)
+        if not self.enabled or not self.enable_arm_required:
+            return
+
+        if self.line_detected:
+            self.enable_detect_streak += 1
+        else:
+            self.enable_detect_streak = 0
+
+        if self.enable_detect_streak >= self.arm_on_enable_detection_count:
+            self._set_enable_arm_state(armed=True)
+            if self.latest_angle_deg is not None:
+                self.update_held_angle_command(self.latest_angle_deg, filtered=True)
 
     def _latest_angle_is_fresh(self, now) -> bool:
         if self.last_angle_stamp is None or self.latest_angle_deg is None:
@@ -365,6 +416,10 @@ class LineFollowMotorModelNode(Node):
             and self.last_speed_update_stamp is not None
             and (now - self.last_speed_update_stamp).nanoseconds / 1e9 < self.speed_update_period_sec
         ):
+            return
+
+        if self.enable_arm_required:
+            self.publish_speed(0.0, 0.0)
             return
 
         if self._latest_angle_is_fresh(now):

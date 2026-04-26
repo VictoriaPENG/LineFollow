@@ -1,0 +1,23 @@
+python3 - <<'PY'
+import time
+import Hobot.GPIO as GPIO
+
+PINS = [29, 31]
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BOARD)
+for pin in PINS:
+      GPIO.setup(pin, GPIO.IN)
+
+  print("monitor pins 29/31, Ctrl+C stop")
+  last = None
+  try:
+      while True:
+          vals = {pin: int(GPIO.input(pin)) for pin in PINS}
+          if vals != last:
+              print(vals)
+              last = vals
+          time.sleep(0.02)
+  except KeyboardInterrupt:
+      pass
+  GPIO.cleanup()
+PY

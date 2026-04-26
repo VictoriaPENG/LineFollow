@@ -232,7 +232,7 @@ source /userdata/dev_ws/install/setup.bash
 先只启动摄像头与 web：
 
 ```bash
-ros2 launch line_follow usb_cam_web.launch.py device:=/dev/video8
+ros2 launch line_follow usb_cam_web.launch.py device:=/dev/video0
 ```
 
 启动后可直接访问 Web 调试页：
@@ -447,7 +447,7 @@ ros2 topic pub --once /motor_speed_cmd std_msgs/msg/Float32MultiArray "{data: [-
 
 ```bash
 ros2 launch line_follow line_follow_system.launch.py \
-  device:=/dev/video8 \
+  device:=/dev/video0 \
   image_topic:=/hbmem_img \
   image_msg_type:=hbmem \
   serial_port:=/dev/ttyUSB0 \

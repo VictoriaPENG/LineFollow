@@ -3,8 +3,8 @@
 Relay remote drive control for RDK X5 40-pin header.
 
 Default behavior:
-- Physical pin 32 receives a sustained relay signal -> drive forward
-- Physical pin 33 receives a sustained relay signal -> drive backward
+- Physical pin 29 receives a sustained relay signal -> drive forward
+- Physical pin 31 receives a sustained relay signal -> drive backward
 - No signal or both signals active -> stop
 
 This script publishes `/motor_speed_cmd` as `[left_rpm, right_rpm]` and expects
@@ -30,7 +30,7 @@ from line_follow.runtime_capture import RuntimeCaptureManager
 GPIO = load_gpio_module()
 
 FIXED_ACTIVE_LOW = True
-FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = True
+FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = False
 
 
 class RelayRemoteDriveNode(Node):

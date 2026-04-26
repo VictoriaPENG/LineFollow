@@ -29,7 +29,7 @@ def generate_launch_description():
     # usb cam图片发布pkg
     usb_cam_device_arg = DeclareLaunchArgument(
         'device',
-        default_value='/dev/video2',
+        default_value='/dev/video0',
         description='usb camera device')
     websocket_image_topic_arg = DeclareLaunchArgument(
         'websocket_image_topic',
