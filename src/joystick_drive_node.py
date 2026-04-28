@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Joystick drive control for RDK X5 40-pin header.
+摇杆直驱节点。
 
-Default pin mapping with physical BOARD numbering:
-- pin 11 -> forward
-- pin 15 -> reverse
-- pin 13 -> left
-- pin 16 -> right
+默认按 RDK X5 40Pin 排针的 BOARD 编号读取四个方向输入：
+- pin 11 -> 前进
+- pin 15 -> 后退
+- pin 13 -> 左转
+- pin 16 -> 右转
 
-Only one direction is accepted at a time. If no input or multiple inputs are
-active, the node publishes a stop command.
+设计约束：
+1. 任意时刻只接受一个方向有效
+2. 没有输入或多方向同时有效时，统一输出停止
+3. 输出写到独立的摇杆接管话题，由下游驱动节点做仲裁
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = False
 
 
 class JoystickDriveNode(Node):
-    """Read four joystick GPIO inputs and publish motor speed commands."""
+    """读取摇杆 GPIO 并发布电机速度命令。"""
 
     def __init__(self) -> None:
         super().__init__("joystick_drive_node")
@@ -102,6 +104,7 @@ class JoystickDriveNode(Node):
         self.gpio_retry_interval_sec = max(0.05, float(self.get_parameter("gpio_retry_interval_sec").value))
         self.gpio_retry_backoff_sec = max(0.5, float(self.get_parameter("gpio_retry_backoff_sec").value))
 
+        # 维护“引脚 -> 方向动作”的映射，方便轮询和日志统一处理。
         self.pin_to_action = {
             self.forward_pin: "forward",
             self.reverse_pin: "reverse",
@@ -114,6 +117,7 @@ class JoystickDriveNode(Node):
             "left": self.turn_left_cmd,
             "right": self.turn_right_cmd,
         }
+        # 每个方向各自维护去抖状态，避免一条输入抖动影响其他方向。
         self.filters = {
             action: DebouncedDigitalInput(
                 active_low=self.active_low,
@@ -157,6 +161,7 @@ class JoystickDriveNode(Node):
         self._publish_override_active(False)
 
     def _setup_gpio(self) -> None:
+        """初始化 GPIO 编号模式、上下拉和输入方向。"""
         mode = GPIO.BOARD if self.use_board_numbering else GPIO.BCM
         GPIO.setwarnings(False)
         GPIO.setmode(mode)
@@ -185,6 +190,7 @@ class JoystickDriveNode(Node):
                 GPIO.setup(pin, GPIO.IN)
 
     def _mark_gpio_unavailable(self, reason: str) -> None:
+        """GPIO 不可用时立即退回安全态并发布停止命令。"""
         self._gpio_ready = False
         self._last_gpio_error = str(reason)
         try:
@@ -195,6 +201,7 @@ class JoystickDriveNode(Node):
         self._publish_override_active(False, force=True)
 
     def _ensure_gpio_ready(self, force: bool = False) -> bool:
+        """按重试策略确保 GPIO 已成功初始化。"""
         if self._gpio_ready:
             return True
 

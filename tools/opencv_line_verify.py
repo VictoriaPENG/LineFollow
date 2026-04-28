@@ -23,6 +23,7 @@ def filter_components(
     max_component_width_ratio=0.0,
     component_intensity_limit=-1,
 ):
+    """按面积、宽度和灰度约束过滤二值连通域。"""
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(bin_img, connectivity=8)
     if num_labels <= 1:
         return bin_img
@@ -79,6 +80,7 @@ def make_binary(
     max_component_width_ratio=0.0,
     component_intensity_limit=-1,
 ):
+    """完成灰度、模糊、阈值和形态学处理，生成巡线二值图。"""
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
     k = max(1, int(blur_ksize))
@@ -123,6 +125,7 @@ def detect_line_and_angle(
     roi_y_start_ratio=0.5,
     draw=False,
 ):
+    """在 ROI 中搜索线条中心并估计角度与横向偏移。"""
     h, w = bin_img.shape[:2]
     roi_y_start_ratio = min(0.95, max(0.0, float(roi_y_start_ratio)))
     y0 = int(round(h * roi_y_start_ratio))
@@ -201,6 +204,7 @@ def detect_line_and_angle(
 
 
 def parse_args():
+    """解析离线验证工具参数。"""
     parser = argparse.ArgumentParser(description="Verify line-follow angle detection with OpenCV only.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--image", help="Path to a single image")
@@ -230,6 +234,7 @@ def parse_args():
 
 
 def annotate_frame(frame, ok, angle_deg, steer_deg):
+    """在图像上叠加检测状态和角度文本。"""
     text = f"OK angle={angle_deg:.2f} steer={steer_deg:.2f}" if ok else "LOST"
     color = (0, 255, 0) if ok else (0, 0, 255)
     vis = frame.copy()
@@ -238,6 +243,7 @@ def annotate_frame(frame, ok, angle_deg, steer_deg):
 
 
 def ensure_save_dir(save_dir):
+    """按需创建输出目录。"""
     if not save_dir:
         return None
     path = Path(save_dir)
@@ -246,6 +252,7 @@ def ensure_save_dir(save_dir):
 
 
 def process_frame(frame, args):
+    """对单帧执行完整检测，并返回调试中间结果。"""
     bin_img = make_binary(
         frame,
         line_is_white=args.line_is_white,
@@ -272,6 +279,7 @@ def process_frame(frame, args):
 
 
 def run_single_image(frame, args, save_dir):
+    """处理单张图片，并在需要时把结果保存到磁盘。"""
     bin_img, detect_vis, overlay, ok, angle_deg, steer_deg = process_frame(frame, args)
     print(f"ok={ok} angle_deg={angle_deg:.2f} steer_deg={steer_deg:.2f}")
 
@@ -290,6 +298,7 @@ def run_single_image(frame, args, save_dir):
 
 
 def run_stream(cap, args, save_dir):
+    """处理摄像头或视频流，实时显示巡线检测结果。"""
     frame_idx = 0
     while True:
         ok_read, frame = cap.read()
@@ -317,6 +326,7 @@ def run_stream(cap, args, save_dir):
 
 
 def main():
+    """离线 OpenCV 验证工具入口。"""
     args = parse_args()
     save_dir = ensure_save_dir(args.save_dir)
 

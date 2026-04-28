@@ -1,65 +1,122 @@
 remote_long_press_start_line_follow_node:
   ros__parameters:
+    # 遥控“前进”通道对应的物理 GPIO 引脚号。
     forward_pin: 31
+    # 遥控“后退/巡线触发”通道对应的物理 GPIO 引脚号。
     reverse_pin: 29
+    # GPIO 编号方式。true 表示使用板载物理排针编号，false 表示使用 BCM 编号。
     use_board_numbering: true
+    # 仅打印输入状态、不真正切换巡线或下发速度命令的调试模式。
     debug_inputs_only: false
+    # 长按判定时间，单位秒。按住超过该时间才会触发模式切换。
     hold_seconds: 0.5
+    # 遥控输入轮询频率，单位 Hz。越高响应越快，但 CPU 占用也略增。
     poll_hz: 20.0
+    # 输入从“无效”切换到“有效”时所需连续采样次数，用于去抖。
     debounce_activate_count: 1
+    # 输入从“有效”切换到“无效”时所需连续采样次数，用于去抖。
     debounce_deactivate_count: 1
+    # 当 GPIO 库不支持内部上下拉时，是否仍然允许启动。true 更灵活，false 更安全。
     allow_inputs_without_pull_resistors: true
+    # 手动前进模式下直接发布到驱动链路的速度话题。
     speed_topic: "/motor_speed_cmd"
+    # 摇杆是否正在接管控制的状态话题。遥控节点会据此停止自己的命令。
     override_active_topic: "/joystick_override_active"
+    # 巡线使能控制话题。长按后退时通过该话题打开巡线，释放时关闭。
     line_follow_enable_topic: "/line_follow/set_enabled"
+    # 手动前进模式下左电机目标转速，单位 RPM。
     forward_left_rpm: -900.0
+    # 手动前进模式下右电机目标转速，单位 RPM。
     forward_right_rpm: 900.0
+    # 用来判断巡线控制节点是否在线的节点名，避免在巡线栈未启动时误切模式。
     line_follow_node_name: "/line_follow_motor_model_node"
+    # 是否自动记录本次运行的调试数据，例如事件日志和 rosbag。
     auto_record_runtime_data: true
+    # 运行日志和 rosbag 的根目录。
     record_root_dir: "/userdata/test_logs"
+    # 是否自动录制 rosbag。开启后便于事后回放问题现场。
     record_rosbag: true
+    # 保存当前关键节点运行时参数快照的脚本路径。
     save_params_script: "/userdata/dev_ws/src/originbot/Line_follow/board_tools/save_runtime_params.sh"
+    # 连续多少次 GPIO 读取异常后认为输入链路失效，并进入更保守的处理。
     gpio_read_error_limit: 3
 
 joystick_drive_node:
   ros__parameters:
+    # 摇杆接管时发布的电机速度话题。与自动巡线话题分离，便于下游仲裁。
     speed_topic: "/joystick_motor_speed_cmd"
+    # 摇杆是否正在接管控制的话题。下游驱动节点优先执行接管命令。
     override_active_topic: "/joystick_override_active"
+    # 摇杆“前进”方向对应的物理 GPIO 引脚号。
     forward_pin: 11
+    # 摇杆“后退”方向对应的物理 GPIO 引脚号。
     reverse_pin: 15
+    # 摇杆“左转”方向对应的物理 GPIO 引脚号。
     left_pin: 13
+    # 摇杆“右转”方向对应的物理 GPIO 引脚号。
     right_pin: 16
+    # GPIO 编号方式。true 表示使用板载物理排针编号。
     use_board_numbering: true
+    # 只打印输入状态、不真正发布速度命令的调试模式。
     debug_inputs_only: false
+    # GPIO 库没有内部上下拉支持时，是否允许继续运行。
     allow_inputs_without_pull_resistors: true
+    # 输入从无效切到有效时的去抖采样次数。
     debounce_activate_count: 1
+    # 输入从有效切回无效时的去抖采样次数。
     debounce_deactivate_count: 1
+    # 摇杆前进时左电机目标转速，单位 RPM。
     forward_left_rpm: 900.0
+    # 摇杆前进时右电机目标转速，单位 RPM。
     forward_right_rpm: -900.0
+    # 摇杆后退时左电机目标转速，单位 RPM。
     reverse_left_rpm: -900.0
+    # 摇杆后退时右电机目标转速，单位 RPM。
     reverse_right_rpm: 900.0
+    # 摇杆左转时左电机目标转速，单位 RPM。
     turn_left_left_rpm: -900.0
+    # 摇杆左转时右电机目标转速，单位 RPM。
     turn_left_right_rpm: -900.0
+    # 摇杆右转时左电机目标转速，单位 RPM。
     turn_right_left_rpm: 900.0
+    # 摇杆右转时右电机目标转速，单位 RPM。
     turn_right_right_rpm: 900.0
+    # 摇杆输入轮询和命令发布频率，单位 Hz。
     publish_hz: 20.0
 
 motor_driver_control_node:
   ros__parameters:
+    # 电机驱动器所连接的串口设备路径。
     serial_port: "/dev/ttyUSB0"
+    # Modbus RTU 波特率。
     baud_rate: 9600
+    # 串口读超时时间，单位秒。过小可能误判超时，过大则降低响应。
     serial_timeout_sec: 0.1
+    # 自动巡线或遥控模式的基础速度命令话题。
     speed_topic: "/motor_speed_cmd"
+    # 摇杆接管时使用的覆盖速度命令话题。
     override_speed_topic: "/joystick_motor_speed_cmd"
+    # 覆盖命令是否生效的话题。true 时驱动节点优先执行 override_speed_topic。
     override_active_topic: "/joystick_override_active"
+    # 驱动节点发布当前左右转速状态的话题，供 dashboard 和调试使用。
     speed_status_topic: "/motor_speed_status"
+    # 覆盖使能信号的超时时间，单位秒。超过后自动退出接管状态。
     override_active_timeout_sec: 0.3
+    # 左侧驱动器 Modbus 从站地址。
     left_slave: 6
+    # 右侧驱动器 Modbus 从站地址。
     right_slave: 8
+    # 允许下发的最小转速绝对值下限，单位 RPM。低于该值会被限制到 0 或下限策略。
     min_speed_rpm: 0
+    # 允许下发的最大转速绝对值上限，单位 RPM。
     max_speed_rpm: 5000
+    # 启动时是否自动给驱动器发送运行模式/使能准备命令。
     auto_start: true
+    # 如果上游长时间不再发布速度命令，超过该时间后驱动节点会主动停车。
     driver_command_timeout_sec: 0.5
+    # 单次寄存器写失败后的重试次数。
     write_retry_count: 2
+    # 写驱动器失败时是否立即触发安全停车。
     fail_safe_on_write_error: true
+    # 连续写失败达到该次数后，进入故障锁定或更强保护逻辑。
     max_consecutive_write_errors: 3

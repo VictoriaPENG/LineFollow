@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Helpers for automatic runtime data capture on the board."""
+"""板端运行时数据留存工具。
+
+用于在每次启动任务时自动创建独立运行目录，记录：
+- 参数快照
+- 事件日志
+- 可选 rosbag
+
+这样在现场调试时，即使程序退出，也能回看当次运行的关键上下文。
+"""
 
 from __future__ import annotations
 
@@ -11,7 +19,7 @@ from typing import Iterable, Optional
 
 
 class RuntimeCaptureManager:
-    """Create per-run directories, save snapshots, and manage rosbag capture."""
+    """创建单次运行目录、保存快照并管理 rosbag 录制。"""
 
     def __init__(
         self,
@@ -35,6 +43,7 @@ class RuntimeCaptureManager:
         self.rosbag_log_path: Optional[str] = None
 
     def start(self) -> Optional[str]:
+        """启动一次新的运行记录会话。"""
         if not self.enabled:
             return None
 

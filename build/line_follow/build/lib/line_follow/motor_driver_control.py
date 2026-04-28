@@ -20,6 +20,7 @@
 """
 
 import struct
+import time
 
 from rcl_interfaces.msg import SetParametersResult
 import rclpy
@@ -60,6 +61,9 @@ class MotorDriverControlNode(Node):
         self.declare_parameter("fail_safe_on_write_error", True)
         self.declare_parameter("max_consecutive_write_errors", 3)
         self.declare_parameter("fault_reset_counter", 0)
+        self.declare_parameter("reconnect_retry_attempts", 10)
+        self.declare_parameter("reconnect_retry_interval_sec", 0.2)
+        self.declare_parameter("reconnect_retry_backoff_sec", 5.0)
 
         self.ser = None
         self.serial_port = str(self.get_parameter("serial_port").value)
@@ -82,6 +86,13 @@ class MotorDriverControlNode(Node):
         self.fail_safe_on_write_error = bool(self.get_parameter("fail_safe_on_write_error").value)
         self.max_consecutive_write_errors = max(1, int(self.get_parameter("max_consecutive_write_errors").value))
         self.fault_reset_counter = int(self.get_parameter("fault_reset_counter").value)
+        self.reconnect_retry_attempts = max(1, int(self.get_parameter("reconnect_retry_attempts").value))
+        self.reconnect_retry_interval_sec = max(
+            0.05, float(self.get_parameter("reconnect_retry_interval_sec").value)
+        )
+        self.reconnect_retry_backoff_sec = max(
+            0.5, float(self.get_parameter("reconnect_retry_backoff_sec").value)
+        )
 
         self.driver_faulted = False
         self.fault_reason = ""
@@ -93,12 +104,9 @@ class MotorDriverControlNode(Node):
         self.base_command = (0.0, 0.0)
         self.override_command = (0.0, 0.0)
         self.override_command_stamp = None
-
-        candidate = self._open_serial(self.serial_port, self.baud_rate, self.serial_timeout_sec)
-        if candidate is not None:
-            self.ser = candidate
-            if not self._init_driver_pair(self.left_slave, self.right_slave):
-                self._enter_fault("driver init failed during startup")
+        self.driver_available = False
+        self._next_reconnect_monotonic = 0.0
+        self._last_reconnect_reason = ""
 
         self.sub = self.create_subscription(Float32MultiArray, self.speed_topic, self.on_base_speed_cmd, 10)
         self.speed_status_pub = self.create_publisher(Float32MultiArray, self.speed_status_topic, 10)
@@ -116,13 +124,18 @@ class MotorDriverControlNode(Node):
         )
         self.timeout_timer = self.create_timer(0.1, self._on_command_timeout_check)
         self.add_on_set_parameters_callback(self._on_set_parameters)
+        self._publish_speed_status(0.0, 0.0)
+        self._recover_driver(force=True, reason="startup")
         self.get_logger().info(
             f"Subscribed to base={self.speed_topic}, override={self.override_speed_topic}, "
             f"speed_status={self.speed_status_topic}, "
             f"override_active={self.override_active_topic}, driver left={self.left_slave}, right={self.right_slave}, "
             f"timeout={self.driver_command_timeout_sec:.2f}s, retries={self.write_retry_count}, "
             f"override_active_timeout={self.override_active_timeout_sec:.2f}s, "
-            f"max_consecutive_write_errors={self.max_consecutive_write_errors}"
+            f"max_consecutive_write_errors={self.max_consecutive_write_errors}, "
+            f"reconnect_retry_attempts={self.reconnect_retry_attempts}, "
+            f"reconnect_retry_interval_sec={self.reconnect_retry_interval_sec:.2f}, "
+            f"reconnect_retry_backoff_sec={self.reconnect_retry_backoff_sec:.2f}"
         )
 
     def _open_serial(self, port: str, baud_rate: int, timeout_sec: float):
@@ -141,6 +154,19 @@ class MotorDriverControlNode(Node):
         except Exception as e:
             self.get_logger().error(f"Open serial failed: {e}")
             return None
+
+    def _close_serial_quietly(self, ser=None):
+        target = self.ser if ser is None else ser
+        if target is None:
+            return
+        try:
+            if target.is_open:
+                target.close()
+        except Exception as e:
+            self.get_logger().warn(f"Close serial failed: {e}")
+        finally:
+            if ser is None:
+                self.ser = None
 
     def _modbus_crc16(self, data: bytes) -> bytes:
         crc = 0xFFFF
@@ -286,16 +312,25 @@ class MotorDriverControlNode(Node):
         except Exception as e:
             self.get_logger().warn(f"Close serial failed: {e}")
 
-    def _init_driver(self, slave_addr: int) -> bool:
-        ok = self._write_modbus_register_on(self.ser, slave_addr, self.REG_MODE, self.MODE_STOP, attempts=1)
+    def _init_driver_on(self, ser, slave_addr: int) -> bool:
+        ok = self._write_modbus_register_on(ser, slave_addr, self.REG_MODE, self.MODE_STOP, attempts=1)
         if ok:
             self.get_logger().info(f"Driver init success, slave={slave_addr}")
         else:
             self.get_logger().error(f"Driver init failed, slave={slave_addr}")
         return ok
 
+    def _init_driver_pair_on(self, ser, left_slave: int, right_slave: int) -> bool:
+        return bool(
+            self._init_driver_on(ser, left_slave)
+            and self._init_driver_on(ser, right_slave)
+        )
+
+    def _init_driver(self, slave_addr: int) -> bool:
+        return self._init_driver_on(self.ser, slave_addr)
+
     def _init_driver_pair(self, left_slave: int, right_slave: int) -> bool:
-        return bool(self._init_driver(left_slave) and self._init_driver(right_slave))
+        return self._init_driver_pair_on(self.ser, left_slave, right_slave)
 
     def _speed_to_mode_and_value(self, speed_rpm: float):
         v = int(round(speed_rpm))
@@ -353,9 +388,62 @@ class MotorDriverControlNode(Node):
         self.last_speed_cmd_stamp = None
         self.last_command_was_stop = True
         self.get_logger().warn("driver fault reset by operator")
+        self._next_reconnect_monotonic = 0.0
+
+    def _mark_driver_unavailable(self, reason: str, immediate: bool = False) -> None:
+        self.driver_available = False
+        self._last_reconnect_reason = str(reason)
+        self.last_speed_cmd_stamp = None
+        self.last_command_was_stop = True
+        self._close_serial_quietly()
+        self._publish_speed_status(0.0, 0.0)
+        if immediate:
+            self._next_reconnect_monotonic = 0.0
+
+    def _recover_driver(self, force: bool = False, reason: str = "runtime") -> bool:
+        if self.driver_faulted:
+            return False
+
+        now = time.monotonic()
+        if self.driver_available and self.ser is not None and self.ser.is_open:
+            return True
+        if not force and now < self._next_reconnect_monotonic:
+            return False
+
+        self._close_serial_quietly()
+        last_issue = "unknown error"
+        for attempt in range(1, self.reconnect_retry_attempts + 1):
+            candidate = self._open_serial(self.serial_port, self.baud_rate, self.serial_timeout_sec)
+            if candidate is not None:
+                if self._init_driver_pair_on(candidate, self.left_slave, self.right_slave):
+                    self.ser = candidate
+                    self.driver_available = True
+                    self.write_error_streak = 0
+                    self._next_reconnect_monotonic = 0.0
+                    self._last_reconnect_reason = ""
+                    self.get_logger().warn(
+                        f"driver connection recovered after {attempt}/{self.reconnect_retry_attempts} attempts ({reason})"
+                    )
+                    return True
+                last_issue = "driver init failed"
+                self._close_serial_quietly(candidate)
+            else:
+                last_issue = "open serial failed"
+
+            if attempt < self.reconnect_retry_attempts:
+                time.sleep(self.reconnect_retry_interval_sec)
+
+        self.driver_available = False
+        self._next_reconnect_monotonic = time.monotonic() + self.reconnect_retry_backoff_sec
+        self._last_reconnect_reason = f"{reason}: {last_issue}"
+        self.get_logger().error(
+            f"driver recovery failed after {self.reconnect_retry_attempts} attempts ({reason}); "
+            f"retry after {self.reconnect_retry_backoff_sec:.1f}s"
+        )
+        return False
 
     def _record_write_failure(self, reason: str):
-        """记录下发失败，并在必要时急停或锁定。"""
+        """记录下发失败，并在必要时停机后尝试重连。"""
         self.write_error_streak += 1
         self.get_logger().error(
             f"driver write failure streak={self.write_error_streak}/{self.max_consecutive_write_errors}: {reason}"
@@ -363,13 +451,17 @@ class MotorDriverControlNode(Node):
         if self.fail_safe_on_write_error:
             self._try_stop_motors(f"write failure: {reason}")
         if self.write_error_streak >= self.max_consecutive_write_errors:
-            self._enter_fault(reason)
+            self._mark_driver_unavailable(reason, immediate=True)
+            self._recover_driver(force=True, reason=f"write failure: {reason}")
 
     def _on_command_timeout_check(self):
         """如果驱动节点长时间没收到新速度命令，则主动停车。"""
         override_expired = self._refresh_override_active()
         if override_expired:
             self._apply_selected_command()
+        if not self.driver_available:
+            self._recover_driver(reason=self._last_reconnect_reason or "periodic reconnect")
+            return
         if self.driver_faulted or self.last_speed_cmd_stamp is None or self.last_command_was_stop:
             return
 
@@ -488,6 +580,7 @@ class MotorDriverControlNode(Node):
 
         if reset_requested:
             self._clear_fault()
+            self._recover_driver(force=True, reason="fault reset")
 
         if params:
             changed = ", ".join(sorted(param.name for param in params))
@@ -519,6 +612,8 @@ class MotorDriverControlNode(Node):
     def _apply_command_pair(self, left_rpm: float, right_rpm: float, source: str):
         if self.driver_faulted:
             self.get_logger().error(f"driver fault latched, ignore speed command until reset: {self.fault_reason}")
+            return
+        if not self.driver_available and not self._recover_driver(reason=f"command from {source}"):
             return
 
         left_ok = self._apply_motor_command(self.left_slave, left_rpm)

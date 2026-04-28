@@ -20,7 +20,10 @@ setup(
             sorted(glob("Markdown/*.md")),
         ),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
-        (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
+        (
+            os.path.join("share", package_name, "config"),
+            glob("config/*.yaml") + glob("config/*.json"),
+        ),
         (os.path.join("share", package_name, "board_tools"), glob("board_tools/*.sh")),
     ],
     install_requires=["setuptools"],

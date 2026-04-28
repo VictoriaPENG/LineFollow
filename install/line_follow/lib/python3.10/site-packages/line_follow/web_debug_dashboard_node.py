@@ -25,11 +25,14 @@ from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
 
 class _StreamState:
+    """保存单路视频流的最新帧及等待条件。"""
+
     def __init__(self, label: str) -> None:
         self.label = label
         self.frame = None
@@ -38,11 +41,15 @@ class _StreamState:
 
 
 class _ThreadingHTTPServer(ThreadingMixIn, server.HTTPServer):
+    """支持并发请求的 HTTP 服务，供多路 MJPEG 和状态接口复用。"""
+
     daemon_threads = True
     allow_reuse_address = True
 
 
 class _MotorSpeedState:
+    """缓存最近一次左右电机转速状态，供网页端读取。"""
+
     def __init__(self) -> None:
         self.left_rpm = 0.0
         self.right_rpm = 0.0
@@ -51,6 +58,8 @@ class _MotorSpeedState:
 
 
 class WebDebugDashboardNode(Node):
+    """提供图像流、速度状态和四宫格调试页面的 Web 节点。"""
+
     def __init__(self) -> None:
         super().__init__("web_debug_dashboard_node")
 
@@ -59,6 +68,7 @@ class WebDebugDashboardNode(Node):
         self.declare_parameter("jpeg_quality", 80)
         self.declare_parameter("open_browser", True)
         self.declare_parameter("source_topic", "/image")
+        self.declare_parameter("source_topic_type", "compressed")
         self.declare_parameter("detect_topic", "/line_follow/debug_detect")
         self.declare_parameter("binary_topic", "/line_follow/debug_binary")
         self.declare_parameter("curve_topic", "/line_follow/debug_angle_curve")
@@ -73,25 +83,39 @@ class WebDebugDashboardNode(Node):
         self.motor_speed = _MotorSpeedState()
 
         topic_map = {
-            "source": (str(self.get_parameter("source_topic").value), "Camera"),
-            "detect": (str(self.get_parameter("detect_topic").value), "Detect"),
-            "binary": (str(self.get_parameter("binary_topic").value), "Binary"),
-            "curve": (str(self.get_parameter("curve_topic").value), "Angle Curve"),
+            "source": (
+                str(self.get_parameter("source_topic").value),
+                "Camera",
+                str(self.get_parameter("source_topic_type").value).strip().lower(),
+            ),
+            "detect": (str(self.get_parameter("detect_topic").value), "Detect", "raw"),
+            "binary": (str(self.get_parameter("binary_topic").value), "Binary", "raw"),
+            "curve": (str(self.get_parameter("curve_topic").value), "Angle Curve", "raw"),
         }
         self.streams: Dict[str, _StreamState] = {
-            name: _StreamState(label) for name, (_, label) in topic_map.items()
+            name: _StreamState(label) for name, (_, label, _) in topic_map.items()
         }
         self._subscriptions = []
 
-        for name, (topic, _) in topic_map.items():
-            self._subscriptions.append(
-                self.create_subscription(
-                    Image,
-                    topic,
-                    self._make_image_callback(name),
-                    qos_profile_sensor_data,
+        for name, (topic, _, topic_type) in topic_map.items():
+            if topic_type == "compressed":
+                self._subscriptions.append(
+                    self.create_subscription(
+                        CompressedImage,
+                        topic,
+                        self._make_compressed_image_callback(name),
+                        qos_profile_sensor_data,
+                    )
                 )
-            )
+            else:
+                self._subscriptions.append(
+                    self.create_subscription(
+                        Image,
+                        topic,
+                        self._make_image_callback(name),
+                        qos_profile_sensor_data,
+                    )
+                )
         self._subscriptions.append(
             self.create_subscription(
                 Float32MultiArray,
@@ -142,6 +166,19 @@ class WebDebugDashboardNode(Node):
                     state.cond.notify_all()
             except Exception as exc:
                 self.get_logger().warn(f"convert image failed for {stream_name}: {exc}")
+
+        return _callback
+
+    def _make_compressed_image_callback(self, stream_name: str):
+        def _callback(msg: CompressedImage) -> None:
+            try:
+                state = self.streams[stream_name]
+                with state.cond:
+                    state.frame = bytes(msg.data)
+                    state.updated_at = time.time()
+                    state.cond.notify_all()
+            except Exception as exc:
+                self.get_logger().warn(f"store compressed image failed for {stream_name}: {exc}")
 
         return _callback
 

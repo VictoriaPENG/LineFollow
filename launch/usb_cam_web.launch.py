@@ -12,6 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+USB 相机与网页调试链路启动文件。
+
+本 launch 负责：
+1. 启动 USB 相机节点，把相机图像发布到 ROS
+2. 可选启动 websocket 图像页面
+3. 启动 JPEG -> NV12 的解码链路，供板端共享内存消费
+4. 启动多画面 Web 调试页
+5. 在相机启动后延时设置亮度，避免设备尚未就绪时配置失败
+"""
+
 import os
 
 from launch import LaunchDescription
@@ -26,10 +37,11 @@ from launch_ros.actions import Node
 from ament_index_python import get_package_share_directory
 
 def generate_launch_description():
+    """生成 USB 相机、图像解码和网页调试相关节点。"""
     cam_node = None
     camera_device_arg = None
 
-    # usb cam图片发布pkg
+    # 相机输入和网页展示的基础参数。
     usb_cam_device_arg = DeclareLaunchArgument(
         'device',
         default_value='/dev/video0',
@@ -52,7 +64,7 @@ def generate_launch_description():
         description='brightness value applied to the camera via v4l2-ctl')
     dashboard_source_topic_type_arg = DeclareLaunchArgument(
         'dashboard_source_topic_type',
-        default_value='compressed',
+        default_value='raw',
         description='source topic type for dashboard: compressed or raw')
     dashboard_bind_host_arg = DeclareLaunchArgument(
         'dashboard_bind_host',
@@ -68,7 +80,7 @@ def generate_launch_description():
         description='auto open browser for multi-view dashboard when desktop is available')
     dashboard_source_topic_arg = DeclareLaunchArgument(
         'dashboard_source_topic',
-        default_value='/image',
+        default_value='/line_follow/debug_undistorted',
         description='source image topic shown in dashboard')
     dashboard_detect_topic_arg = DeclareLaunchArgument(
         'dashboard_detect_topic',
@@ -123,7 +135,7 @@ def generate_launch_description():
         ],
     )
 
-    # web展示pkg
+    # 老的 websocket 图像页，适合只看单路原图。
     web_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -137,7 +149,7 @@ def generate_launch_description():
         }.items()
     )
 
-    # jpeg->nv12
+    # 巡线节点默认消费板端共享内存 NV12，因此这里把 JPEG 解码后转发到 `/hbmem_img`。
     nv12_codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -194,15 +206,15 @@ def generate_launch_description():
         dashboard_speed_status_topic_arg,
         enable_websocket_arg,
         enable_dashboard_arg,
-        # 图片发布pkg
+        # 相机图像发布链路。
         cam_node,
         camera_control_node,
-        # web展示pkg
+        # 单路 websocket 图像页。
         web_node,
-        # 图像编解码
+        # JPEG -> NV12 解码链路。
         nv12_codec_node, 
-        # 启动零拷贝环境配置节点
+        # 启动零拷贝共享内存环境。
         shared_mem_node,
-        # 多画面调试页
+        # 多画面调试页。
         dashboard_node,
     ])

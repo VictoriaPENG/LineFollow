@@ -1,0 +1,90 @@
+{
+  "image_size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "pattern": {
+    "inner_corners_cols": 9,
+    "inner_corners_rows": 6,
+    "square_size_mm": 25.0
+  },
+  "valid_image_count": 26,
+  "accepted_images": [
+    "tools/usb_camera_calibration/output/images/calib_000.jpg",
+    "tools/usb_camera_calibration/output/images/calib_001.jpg",
+    "tools/usb_camera_calibration/output/images/calib_002.jpg",
+    "tools/usb_camera_calibration/output/images/calib_003.jpg",
+    "tools/usb_camera_calibration/output/images/calib_004.jpg",
+    "tools/usb_camera_calibration/output/images/calib_005.jpg",
+    "tools/usb_camera_calibration/output/images/calib_006.jpg",
+    "tools/usb_camera_calibration/output/images/calib_007.jpg",
+    "tools/usb_camera_calibration/output/images/calib_008.jpg",
+    "tools/usb_camera_calibration/output/images/calib_009.jpg",
+    "tools/usb_camera_calibration/output/images/calib_010.jpg",
+    "tools/usb_camera_calibration/output/images/calib_011.jpg",
+    "tools/usb_camera_calibration/output/images/calib_012.jpg",
+    "tools/usb_camera_calibration/output/images/calib_013.jpg",
+    "tools/usb_camera_calibration/output/images/calib_014.jpg",
+    "tools/usb_camera_calibration/output/images/calib_015.jpg",
+    "tools/usb_camera_calibration/output/images/calib_016.jpg",
+    "tools/usb_camera_calibration/output/images/calib_017.jpg",
+    "tools/usb_camera_calibration/output/images/calib_018.jpg",
+    "tools/usb_camera_calibration/output/images/calib_019.jpg",
+    "tools/usb_camera_calibration/output/images/calib_020.jpg",
+    "tools/usb_camera_calibration/output/images/calib_021.jpg",
+    "tools/usb_camera_calibration/output/images/calib_022.jpg",
+    "tools/usb_camera_calibration/output/images/calib_023.jpg",
+    "tools/usb_camera_calibration/output/images/calib_024.jpg",
+    "tools/usb_camera_calibration/output/images/calib_025.jpg"
+  ],
+  "rms_reprojection_error": 0.5185307870663001,
+  "mean_reprojection_error_px": 0.06498208731659881,
+  "camera_matrix": [
+    [
+      990.2789217989399,
+      0.0,
+      1021.5470641904737
+    ],
+    [
+      0.0,
+      990.1767746082667,
+      550.3610408201632
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "dist_coeffs": [
+    -0.045606842611140744,
+    0.09658228748357495,
+    -0.0006572110976414382,
+    0.0005814417058322317,
+    -0.06661128786040141
+  ],
+  "optimal_new_camera_matrix": [
+    [
+      881.3023071289062,
+      0.0,
+      1096.4580148182504
+    ],
+    [
+      0.0,
+      835.3677368164062,
+      558.1975151372899
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "roi": {
+    "x": 164,
+    "y": 91,
+    "width": 1739,
+    "height": 917
+  },
+  "undistorted_preview": "tools/usb_camera_calibration/output/preview/undistorted_preview.jpg"
+}

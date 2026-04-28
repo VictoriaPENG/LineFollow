@@ -1,0 +1,186 @@
+line_follow_angle_node:
+  ros__parameters:
+    # 视觉输入话题。当前整机链路默认使用 hobot_codec 解码后的共享内存图像。
+    image_topic: "/hbmem_img"
+    # 输入图像消息类型。RDK 上通常保持为 hbmem；若直接订阅普通图像可改为 raw。
+    image_msg_type: "hbmem"
+    # 是否在巡线检测前应用相机标定去畸变。
+    enable_camera_undistort: true
+    # 相机标定结果文件。该文件会随 config 目录安装到 ROS 包中。
+    camera_calibration_file: "config/camera_calibration.json"
+    # 横向偏移像素量输出话题，供调试和记录使用。
+    offset_px_topic: "/line_follow/line_offset_px"
+    # 横向偏移归一化输出话题，范围通常约为 [-1, 1]。
+    offset_norm_topic: "/line_follow/line_offset_norm"
+    # 视觉相对姿态输出话题：补偿后的航向误差和减去参考 offset 后的横向误差。
+    visual_heading_error_topic: "/line_follow/visual_heading_error_deg"
+    visual_lateral_error_px_topic: "/line_follow/visual_lateral_error_px"
+    visual_lateral_error_norm_topic: "/line_follow/visual_lateral_error_norm"
+    # 是否检测到有效引导线。供运动模型做使能和保护判断。
+    line_detected_topic: "/line_follow/line_detected"
+
+    # 线检测方法。
+    # clahe_adaptive: CLAHE 局部增强 + 自适应阈值 + 形态学，适合强光/阴影/地面亮度不均。
+    # edge_line: 边缘 + 线结构；threshold: 旧的灰度阈值法。
+    detection_method: "threshold"
+    # 目标线颜色。false 表示黑线白底，true 表示白线黑底。
+    # 仅 threshold 检测方法使用该参数。
+    line_is_white: false
+    # 高斯模糊核大小。增大可抑制噪声，但过大会吞掉细线。
+    blur_ksize: 5
+    # 二值化阈值。-1 表示使用 Otsu 自动阈值；固定光照场景可手动给值。
+    # 仅 threshold 检测方法使用该参数。
+    thresh: 115
+    # 形态学核大小。用于去小噪点、补小断裂。
+    # clahe_adaptive 和 threshold 检测方法使用该参数。
+    morph_ksize: 3
+
+    # CLAHE 局部对比度增强参数。clip_limit 越大增强越强，也越容易放大噪声。
+    clahe_clip_limit: 2.0
+    clahe_tile_grid_size: 12
+    # 自适应阈值参数。block_size 必须为奇数，越大越看重更大范围的局部亮度。
+    # adaptive_c 越大，黑线模式下越容易保留偏暗区域，也可能引入阴影噪声。
+    adaptive_block_size: 101
+    adaptive_c: 12.0
+
+    # Canny 边缘低/高阈值。edge_line 检测方法使用。
+    canny_low: 40
+    canny_high: 120
+    # 边缘连接和膨胀核大小。增大可连接断裂边缘，但也会吃进更多噪声。
+    edge_morph_ksize: 3
+    edge_dilate_ksize: 5
+    # Hough 线段结构筛选参数。用于只保留连续、近似纵向的线结构。
+    hough_threshold: 40
+    hough_min_line_length_ratio: 0.12
+    hough_max_line_gap: 35
+    max_line_angle_from_vertical_deg: 65.0
+    line_draw_width: 9
+    # Hough 没找到稳定线段时，是否退回到连接后的边缘带，避免完全丢线。
+    fallback_to_edge_band: true
+
+    # 滑动窗口层数。越大表示从下到上采样更密。
+    n_windows: 9
+    # 每层滑窗半宽，单位像素。线偏移大时可增大，误跟踪干扰时可减小。
+    margin: 55
+    # 单层窗口内判定“命中线”的最少非零像素数。
+    minpix: 30
+    # 调试建议转向量的比例系数，对最终电机控制影响很小。
+    kp: 1.0
+    # 在视觉角度上附加的人工偏置，用于补偿相机安装误差。
+    angle_bias_deg: 3.36
+    # 直行参考图中的横向偏移像素，用于把实时 offset 转成相对横向误差。
+    target_offset_px: 67.7
+
+    # 检测 ROI 底边相对图像底部向上的偏移比例。
+    # 值越小越靠近图像底部，越大则向上裁掉更多近处区域。
+    roi_bottom_offset_ratio: 0.10
+    # 检测 ROI 高度占整幅图像高度的比例。
+    # 值越大，可看到更远的线，但也更容易引入远处噪声。
+    roi_height_ratio: 0.5
+    # 检测 ROI 左右两边默认裁掉的比例；独立左右参数会覆盖该值。
+    roi_side_margin_ratio: 0.05
+    # 检测 ROI 左侧/右侧分别裁掉的比例。
+    roi_left_margin_ratio: 0.15
+    roi_right_margin_ratio: 0.05
+    # 底部初始搜索带半宽比例。用于确定起始直方图搜索范围。
+    base_search_half_width_ratio: 0.12
+
+    # 连通域最小面积，小于该值的噪点会被过滤。
+    min_component_area: 50
+    # 连通域最大面积。0 表示不限制；可用于排除大块阴影或污渍。
+    max_component_area: 0
+    # 连通域最大宽度像素。0 表示不限制。
+    max_component_width_px: 0
+    # 连通域最大宽度占图像宽度的比例。0 表示不限制。
+    max_component_width_ratio: 0.0
+    # 连通域灰度强度过滤阈值。负数表示关闭该过滤。
+    # 黑线模式下可用于只保留“更黑”的候选区域。
+    component_intensity_limit: 125.0
+
+    # 是否弹出本地 OpenCV 调试窗口。板端无桌面时一般保持 false。
+    show_debug: false
+    # 是否发布调试图像话题，推荐远程调试时保持开启。
+    publish_debug_image: true
+    # 调试图像发布节流。3 表示每 3 帧发布一次调试图，降低 Web/MJPEG 延迟。
+    debug_publish_every_n: 3
+    # 去畸变后的相机图像，Web 调试页默认显示该话题。
+    debug_undistorted_topic: "/line_follow/debug_undistorted"
+    # 是否生成角度历史曲线图。
+    show_angle_curve: true
+    # 角度曲线保留的历史帧数。
+    angle_curve_history_size: 240
+    # 角度曲线显示的纵轴范围上限，单位度。
+    angle_curve_limit_deg: 50.0
+
+line_follow_motor_model_node:
+  ros__parameters:
+    # 输入的视觉角度话题。由视觉节点发布，表示线相对车体前向的偏转角。
+    angle_topic: "/line_follow/line_angle_deg"
+    # 输入的标定后横向误差话题，正值表示线相对参考位置偏右。
+    offset_norm_topic: "/line_follow/visual_lateral_error_norm"
+    # 线检测成功标志话题。用于重新使能后的放行保护，以及丢线保护。
+    line_detected_topic: "/line_follow/line_detected"
+    # 输出到电机驱动节点的左右履带目标速度话题。
+    speed_topic: "/motor_speed_cmd"
+    # 是否发布调试话题，例如中心速度和差速量，便于现场观察控制输出。
+    publish_debug_topic: true
+    # 视觉角度输入的绝对值上限，超过后会被裁剪，避免异常角度直接冲击控制器。
+    max_visual_angle_deg: 70.0
+    # 航向误差增益。数值越大，看到角度偏差后修正越激进。
+    heading_gain: 20.0
+    # 横向误差折算为等效航向角的增益，单位 deg / normalized offset。
+    offset_gain_deg: 8.0
+    # 横向偏移小于该值时，完整使用视觉角度项。
+    offset_priority_threshold_norm: 0.18
+    # 横向偏移大于该值时，进入横向偏移优先模式。
+    offset_priority_full_norm: 0.30
+    # 横向偏移优先模式下保留的最小角度项比例，避免完全忽略线方向。
+    offset_priority_min_heading_scale: 0.25
+    # 基础前进电机转速。线居中且角度较小时，车辆按这个速度巡线。
+    base_motor_rpm: 900.0
+    # 降速巡线基础速度。角度或横向偏移较大，但还没进入原地纠偏时使用。
+    slow_base_motor_rpm: 450.0
+    # 横向偏移进入/退出降速巡线阈值，使用归一化偏移量。
+    slow_speed_offset_enter_norm: 0.35
+    slow_speed_offset_exit_norm: 0.20
+    # 角度进入/退出降速巡线阈值，单位度。
+    slow_speed_angle_enter_deg: 25.0
+    slow_speed_angle_exit_deg: 12.0
+    # 降速巡线时只放大差速转向项，不提高前进基础速度。
+    slow_speed_turn_boost: 2.4
+    # 差速转向量上限，单位 RPM。0 表示不单独限制差速项。
+    max_delta_motor_rpm: 1400.0
+    # 是否允许一侧电机反转参与急转。false 时只做前进差速，true 时可原地感更强地转向。
+    allow_reverse: false
+    # 视觉角度命令的新鲜度超时时间。超过这个时间没收到新角度，就视为视觉输入失效。
+    command_timeout_sec: 0.5
+    # 视觉角度丢失时是否继续按直行保底前进。true 更连续，false 更保守。
+    fallback_straight_when_no_angle: false
+    # 速度目标更新周期，单位秒。值越小，控制刷新越频繁。
+    speed_update_period_sec: 0.03
+    # 角度一阶低通滤波系数。越接近 1 越跟随原始角度，越小越平滑但也更迟钝。
+    angle_lowpass_alpha: 0.35
+    # 小角度死区，单位度。绝对值小于该阈值时按 0 处理，用于减少轻微抖动。
+    angle_deadband_deg: 2.5
+    # 直行角度判定阈值，单位度。角度足够小时直接视作直线前进。
+    straight_angle_epsilon_deg: 1.5
+    # 左右电机转速每秒最大变化量，单位 RPM/s。用于限制速度阶跃，减少冲击。
+    max_motor_rpm_step_per_sec: 2500.0
+    # 电机目标转速上限，单位 RPM。用于限制控制输出，防止给驱动器过大的目标值。
+    max_motor_rpm: 3000.0
+    # 转向方向符号。1 表示按当前角度定义转向，-1 表示整体反向修正。
+    steering_sign: 1.0
+    # 重新使能巡线后，要求连续检测成功多少帧才真正放行控制。0 表示不等待。
+    arm_on_enable_detection_count: 0
+    # 左右履带中心线之间的距离，单位米。是底盘几何的关键参数。
+    track_width_m: 0.577
+    # 驱动轮直径，单位米。用于估算周长、输出转速和底盘运动关系。
+    drive_wheel_diameter_m: 0.18
+    # 履带节距，单位米。用于估算履带环长等机械量。
+    track_pitch_m: 0.06
+    # 单侧履带链节数。与节距一起决定履带总长度。
+    track_link_count: 24
+    # 左电机方向符号。1 表示当前命令方向正确，-1 表示左电机安装方向相反需要翻转。
+    left_motor_sign: 1.0
+    # 右电机方向符号。1 表示当前命令方向正确，-1 表示右电机安装方向相反需要翻转。
+    right_motor_sign: -1.0

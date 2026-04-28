@@ -1,0 +1,90 @@
+[0.289s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'build', '--packages-select', 'line_follow']
+[0.290s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=False, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=4, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=['line_follow'], packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, verb_parser=<colcon_defaults.argument_parser.defaults.DefaultArgumentsDecorator object at 0x7b963d40dc60>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0x7b963d40d750>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x7b963d40d750>>)
+[0.719s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[0.719s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.719s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[0.720s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.720s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) discover
+[0.720s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.720s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow'
+[0.720s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_pkg']
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_pkg'
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_meta']
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_meta'
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[0.721s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[0.761s] DEBUG:colcon.colcon_core.package_identification:Package '.' with type 'ros.ament_python' and name 'line_follow'
+[0.762s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[0.762s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) discover
+[0.762s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) using defaults
+[0.762s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[0.762s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[0.811s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) check parameters
+[0.811s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) discover
+[0.819s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 12 installed packages in /home/yunbo/dev_ws/install
+[0.824s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 335 installed packages in /opt/ros/humble
+[0.852s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) using defaults
+[0.986s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'cmake_args' from command line to 'None'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'cmake_target' from command line to 'None'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'cmake_clean_cache' from command line to 'False'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'cmake_clean_first' from command line to 'False'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'cmake_force_configure' from command line to 'False'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'ament_cmake_args' from command line to 'None'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'catkin_cmake_args' from command line to 'None'
+[0.987s] Level 5:colcon.colcon_core.verb:set package 'line_follow' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.987s] DEBUG:colcon.colcon_core.verb:Building package 'line_follow' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow', 'merge_install': False, 'path': '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow', 'symlink_install': False, 'test_result_base': None}
+[0.988s] INFO:colcon.colcon_core.executor:Executing jobs using 'parallel' executor
+[0.990s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete
+[0.991s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow' with build type 'ament_python'
+[0.991s] Level 1:colcon.colcon_core.shell:create_environment_hook('line_follow', 'ament_prefix_path')
+[0.996s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.998s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/hook/ament_prefix_path.ps1'
+[0.999s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/hook/ament_prefix_path.dsv'
+[1.001s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/hook/ament_prefix_path.sh'
+[1.003s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.004s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.695s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow'
+[1.695s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.696s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[2.570s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow': PYTHONPATH=/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/line_follow build --build-base /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build install --record /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log --single-version-externally-managed install_data
+[3.336s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow' returned '0': PYTHONPATH=/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/line_follow build --build-base /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/build install --record /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log --single-version-externally-managed install_data
+[3.339s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow' for CMake module files
+[3.340s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow' for CMake config files
+[3.341s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib'
+[3.341s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/bin'
+[3.342s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/pkgconfig/line_follow.pc'
+[3.342s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages'
+[3.342s] Level 1:colcon.colcon_core.shell:create_environment_hook('line_follow', 'pythonpath')
+[3.343s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/hook/pythonpath.ps1'
+[3.344s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/hook/pythonpath.dsv'
+[3.345s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/hook/pythonpath.sh'
+[3.348s] Level 1:colcon.colcon_core.environment:checking '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/bin'
+[3.348s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(line_follow)
+[3.349s] INFO:colcon.colcon_core.shell:Creating package script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/package.ps1'
+[3.352s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/package.dsv'
+[3.353s] INFO:colcon.colcon_core.shell:Creating package script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/package.sh'
+[3.355s] INFO:colcon.colcon_core.shell:Creating package script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/package.bash'
+[3.357s] INFO:colcon.colcon_core.shell:Creating package script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/package.zsh'
+[3.358s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/colcon-core/packages/line_follow)
+[3.359s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:closing loop
+[3.359s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:loop closed
+[3.360s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete finished with '0'
+[3.360s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[3.370s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[3.370s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[3.371s] INFO:colcon.colcon_notification.desktop_notification:Sending desktop notification using 'notify2'
+[3.406s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[3.406s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/local_setup.ps1'
+[3.409s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/_local_setup_util_ps1.py'
+[3.414s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/setup.ps1'
+[3.421s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/local_setup.sh'
+[3.422s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/_local_setup_util_sh.py'
+[3.424s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/setup.sh'
+[3.430s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/local_setup.bash'
+[3.432s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/setup.bash'
+[3.435s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/local_setup.zsh'
+[3.439s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/setup.zsh'

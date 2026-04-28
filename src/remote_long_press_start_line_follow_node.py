@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Long-press remote mode controller for line-follow and manual forward drive.
+长按遥控模式控制节点。
 
-Default behavior:
-- Monitor the forward and reverse relay inputs on the 40-pin header
-- Assume the full line-follow stack is already started by launch or systemd
-- Long-press reverse to enable line-follow mode while the button is held
-- Long-press forward to disable line-follow and enter manual forward mode while the button is held
-- Releasing either button stops the vehicle immediately
+默认行为：
+1. 监听 40Pin 排针上的前进/后退继电器输入
+2. 默认假设巡线整栈已经由 launch 或 systemd 预先拉起
+3. 长按“后退”键时切入巡线模式，并在按住期间保持有效
+4. 长按“前进”键时退出巡线模式，改为手动前进
+5. 任意按键释放后，车辆立即停车
+
+这个节点的核心职责不是直接驱动底层硬件，而是做模式仲裁：
+决定当前到底由自动巡线控制车辆，还是由人工临时接管。
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = False
 
 
 class RemoteLongPressStartNode(Node):
-    """Arbitrate long-press remote modes without command-topic conflicts."""
+    """在长按遥控模式下做巡线/手动控制切换。"""
 
     def __init__(self) -> None:
         super().__init__("remote_long_press_start_line_follow_node")

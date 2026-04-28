@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+摇杆 + 长按遥控 + 巡线整栈联合启动文件。
+
+这个 launch 在 `line_follow_system.launch.py` 的基础上，再额外启动：
+1. 摇杆接管节点
+2. 长按遥控模式切换节点
+
+适用于“自动巡线常驻运行，但现场允许人工短时接管”的场景。
+"""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -11,6 +20,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    """组合整机巡线链路与人工接管链路。"""
     line_follow_system_launch = PathJoinSubstitution(
         [FindPackageShare("line_follow"), "launch", "line_follow_system.launch.py"]
     )

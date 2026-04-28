@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""运行状态巡检工具。
+
+周期性检查 systemd 服务、ROS 节点和关键话题是否存在，
+适合在板端快速判断整套程序是否真正跑起来。
+"""
 
 import argparse
 import shutil
@@ -29,6 +34,7 @@ DEFAULT_TOPICS = [
 
 
 def run_command(cmd: list[str]) -> tuple[int, str]:
+    """执行外部命令并返回退出码与可读输出。"""
     try:
         result = subprocess.run(
             cmd,
@@ -49,10 +55,12 @@ def run_command(cmd: list[str]) -> tuple[int, str]:
 
 
 def print_section(title: str) -> None:
+    """输出带分隔线的小节标题。"""
     print(f"\n=== {title} ===")
 
 
 def check_services(services: Iterable[str]) -> None:
+    """检查一组 systemd 服务的活动状态。"""
     print_section("systemd services")
     for service in services:
         code, text = run_command(["systemctl", "is-active", service])
@@ -61,6 +69,7 @@ def check_services(services: Iterable[str]) -> None:
 
 
 def get_node_set() -> set[str]:
+    """获取当前 ROS 图中的节点集合。"""
     code, text = run_command(["ros2", "node", "list"])
     if code != 0:
         raise RuntimeError(text or "ros2 node list failed")
@@ -68,6 +77,7 @@ def get_node_set() -> set[str]:
 
 
 def check_nodes(nodes: Iterable[str]) -> None:
+    """检查关键 ROS 节点是否已经出现。"""
     print_section("ros2 nodes")
     node_set = get_node_set()
     for node in nodes:
@@ -79,6 +89,7 @@ def check_nodes(nodes: Iterable[str]) -> None:
 
 
 def check_topic_presence(topics: Iterable[str]) -> None:
+    """只检查关键话题是否存在。"""
     print_section("ros2 topics")
     code, text = run_command(["ros2", "topic", "list"])
     if code != 0:
@@ -90,6 +101,7 @@ def check_topic_presence(topics: Iterable[str]) -> None:
 
 
 def check_topic_detail(topic: str) -> None:
+    """输出单个话题的发布者和订阅者数量。"""
     code, info = run_command(["ros2", "topic", "info", topic, "-v"])
     if code != 0:
         print(f"{topic}: info unavailable: {info}")
@@ -107,6 +119,7 @@ def check_topic_detail(topic: str) -> None:
 
 
 def check_topics(topics: Iterable[str]) -> None:
+    """同时检查关键话题存在性和端点数量。"""
     check_topic_presence(topics)
     print("\ntopic endpoints:")
     for topic in topics:
@@ -114,14 +127,17 @@ def check_topics(topics: Iterable[str]) -> None:
 
 
 def print_timestamp() -> None:
+    """打印当前巡检时间。"""
     print(time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
 def clear_screen() -> None:
+    """清空终端，方便 watch 模式反复刷新。"""
     print("\033[2J\033[H", end="")
 
 
 def ensure_commands() -> None:
+    """提前确认 `systemctl` 和 `ros2` 命令存在。"""
     missing = [
         name for name in ("systemctl", "ros2")
         if shutil.which(name) is None
@@ -131,6 +147,7 @@ def ensure_commands() -> None:
 
 
 def monitor(services: list[str], nodes: list[str], topics: list[str]) -> None:
+    """执行一次完整巡检。"""
     print_timestamp()
     check_services(services)
     try:
@@ -142,6 +159,7 @@ def monitor(services: list[str], nodes: list[str], topics: list[str]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """解析巡检周期以及用户追加的服务、节点、话题。"""
     parser = argparse.ArgumentParser(
         description="Monitor line_follow services, nodes, and topics.",
     )
@@ -181,6 +199,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def merge_defaults(defaults: list[str], extra: list[str]) -> list[str]:
+    """在保序前提下把额外项合并进默认列表。"""
     merged = list(defaults)
     for item in extra:
         if item not in merged:
@@ -189,6 +208,7 @@ def merge_defaults(defaults: list[str], extra: list[str]) -> list[str]:
 
 
 def main() -> None:
+    """工具主入口。"""
     args = parse_args()
     ensure_commands()
 

@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Long-press remote mode controller for line-follow and manual forward drive.
+长按遥控模式控制节点。
 
-Default behavior:
-- Monitor the forward and reverse relay inputs on the 40-pin header
-- Start the full line-follow stack in the background during node startup
-- Long-press reverse to enable line-follow mode while the button is held
-- Long-press forward to disable line-follow and enter manual forward mode while the button is held
-- Releasing either button stops the vehicle immediately
+默认行为：
+1. 监听 40Pin 排针上的前进/后退继电器输入
+2. 默认假设巡线整栈已经由 launch 或 systemd 预先拉起
+3. 长按“后退”键时切入巡线模式，并在按住期间保持有效
+4. 长按“前进”键时退出巡线模式，改为手动前进
+5. 任意按键释放后，车辆立即停车
+
+这个节点的核心职责不是直接驱动底层硬件，而是做模式仲裁：
+决定当前到底由自动巡线控制车辆，还是由人工临时接管。
 """
 
 from __future__ import annotations
 
 import os
 import signal
-import subprocess
 import sys
 import time
 
-from rcl_interfaces.srv import SetParameters
 import rclpy
 from rclpy.node import Node
-from rclpy.parameter import Parameter
 from std_msgs.msg import Bool
 from std_msgs.msg import Float32MultiArray
 
@@ -32,14 +32,33 @@ from line_follow.runtime_capture import RuntimeCaptureManager
 GPIO = load_gpio_module()
 
 FIXED_ACTIVE_LOW = True
-FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = True
+FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = False
 
 
 class RemoteLongPressStartNode(Node):
-    """Arbitrate long-press remote modes without command-topic conflicts."""
+    """在长按遥控模式下做巡线/手动控制切换。"""
 
     def __init__(self) -> None:
         super().__init__("remote_long_press_start_line_follow_node")
+
+        pid_file = "/tmp/remote_long_press_line_follow.pid"
+        try:
+            if os.path.exists(pid_file):
+                with open(pid_file, "r") as f:
+                    old_pid = int(f.read().strip())
+                try:
+                    os.kill(old_pid, 0)
+                    self.get_logger().error(f"Another instance is already running (PID: {old_pid}). Exiting.")
+                    sys.exit(1)
+                except OSError:
+                    self.get_logger().warn(f"Stale PID file found (PID: {old_pid}), removing it.")
+                    os.remove(pid_file)
+            with open(pid_file, "w") as f:
+                f.write(str(os.getpid()))
+            self._pid_file = pid_file
+        except Exception as exc:
+            self.get_logger().warn(f"Failed to create PID file: {exc}. Continuing without PID lock.")
+            self._pid_file = None
 
         self.declare_parameter("forward_pin", 31)
         self.declare_parameter("reverse_pin", 29)
@@ -49,28 +68,16 @@ class RemoteLongPressStartNode(Node):
         self.declare_parameter("poll_hz", 20.0)
         self.declare_parameter("debounce_activate_count", 5)
         self.declare_parameter("debounce_deactivate_count", 1)
-        self.declare_parameter("autostart_line_follow_stack", True)
         self.declare_parameter(
             "allow_inputs_without_pull_resistors",
             FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS,
         )
-        self.declare_parameter(
-            "launch_command",
-            "ros2 launch line_follow line_follow_system.launch.py line_follow_enabled:=false start_driver:=false",
-        )
         self.declare_parameter("speed_topic", "/motor_speed_cmd")
         self.declare_parameter("override_active_topic", "/joystick_override_active")
-        self.declare_parameter("forward_left_rpm", -600.0)
-        self.declare_parameter("forward_right_rpm", 600.0)
+        self.declare_parameter("line_follow_enable_topic", "/line_follow/set_enabled")
+        self.declare_parameter("forward_left_rpm", -900.0)
+        self.declare_parameter("forward_right_rpm", 900.0)
         self.declare_parameter("line_follow_node_name", "/line_follow_motor_model_node")
-        self.declare_parameter("adopt_existing_line_follow_stack", True)
-        self.declare_parameter("line_follow_enable_timeout_sec", 2.0)
-        self.declare_parameter("line_follow_disable_timeout_sec", 0.2)
-        self.declare_parameter("autostart_driver_process", True)
-        self.declare_parameter(
-            "driver_launch_command",
-            "ros2 run line_follow motor_driver_control_node",
-        )
         self.declare_parameter("auto_record_runtime_data", True)
         self.declare_parameter("record_root_dir", "/userdata/test_logs")
         self.declare_parameter("record_rosbag", True)
@@ -78,6 +85,10 @@ class RemoteLongPressStartNode(Node):
             "save_params_script",
             "/userdata/dev_ws/src/originbot/Line_follow/board_tools/save_runtime_params.sh",
         )
+        self.declare_parameter("gpio_retry_attempts", 10)
+        self.declare_parameter("gpio_retry_interval_sec", 0.2)
+        self.declare_parameter("gpio_retry_backoff_sec", 5.0)
+        self.declare_parameter("gpio_read_error_limit", 3)
 
         self.forward_pin = int(self.get_parameter("forward_pin").value)
         self.reverse_pin = int(self.get_parameter("reverse_pin").value)
@@ -90,30 +101,14 @@ class RemoteLongPressStartNode(Node):
             self.get_parameter("allow_inputs_without_pull_resistors").value
         )
         self.hold_seconds = max(0.2, float(self.get_parameter("hold_seconds").value))
-        self.autostart_line_follow_stack = bool(
-            self.get_parameter("autostart_line_follow_stack").value
-        )
-        self.launch_command = str(self.get_parameter("launch_command").value)
         self.speed_topic = str(self.get_parameter("speed_topic").value)
         self.override_active_topic = str(self.get_parameter("override_active_topic").value)
+        self.line_follow_enable_topic = str(self.get_parameter("line_follow_enable_topic").value)
         self.forward_cmd = (
             float(self.get_parameter("forward_left_rpm").value),
             float(self.get_parameter("forward_right_rpm").value),
         )
         self.line_follow_node_name = str(self.get_parameter("line_follow_node_name").value)
-        self.adopt_existing_line_follow_stack = bool(
-            self.get_parameter("adopt_existing_line_follow_stack").value
-        )
-        self.line_follow_enable_timeout_sec = max(
-            0.05, float(self.get_parameter("line_follow_enable_timeout_sec").value)
-        )
-        self.line_follow_disable_timeout_sec = max(
-            0.05, float(self.get_parameter("line_follow_disable_timeout_sec").value)
-        )
-        self.autostart_driver_process = bool(
-            self.get_parameter("autostart_driver_process").value
-        )
-        self.driver_launch_command = str(self.get_parameter("driver_launch_command").value)
         self.capture = RuntimeCaptureManager(
             enabled=bool(self.get_parameter("auto_record_runtime_data").value),
             record_root_dir=str(self.get_parameter("record_root_dir").value),
@@ -133,6 +128,10 @@ class RemoteLongPressStartNode(Node):
             save_params_script=str(self.get_parameter("save_params_script").value),
         )
         poll_hz = max(2.0, float(self.get_parameter("poll_hz").value))
+        self.gpio_retry_attempts = max(1, int(self.get_parameter("gpio_retry_attempts").value))
+        self.gpio_retry_interval_sec = max(0.05, float(self.get_parameter("gpio_retry_interval_sec").value))
+        self.gpio_retry_backoff_sec = max(0.5, float(self.get_parameter("gpio_retry_backoff_sec").value))
+        self.gpio_read_error_limit = max(1, int(self.get_parameter("gpio_read_error_limit").value))
         self.forward_filter = DebouncedDigitalInput(
             active_low=self.active_low,
             activate_count=debounce_activate_count,
@@ -147,35 +146,35 @@ class RemoteLongPressStartNode(Node):
         self._press_started_at = None
         self._hold_candidate = None
         self._active_mode = "idle"
-        self._line_follow_child = None
-        self._driver_child = None
         self._line_follow_enabled = False
-        self._using_external_line_follow_stack = False
         self._last_line_follow_enable_attempt = 0.0
         self._shutting_down = False
         self._joystick_override_active = False
         self._remote_inhibited_by_joystick = False
         self._joystick_override_stop_sent = False
         self._last_input_debug_snapshot = None
+        self._gpio_ready = False
+        self._gpio_retry_count = 0
+        self._next_gpio_retry_monotonic = 0.0
+        self._last_gpio_error = ""
+        self._gpio_read_error_streak = 0
         self.publisher = self.create_publisher(Float32MultiArray, self.speed_topic, 10)
+        self.line_follow_enable_pub = self.create_publisher(
+            Bool,
+            self.line_follow_enable_topic,
+            10,
+        )
         self.override_active_sub = self.create_subscription(
             Bool,
             self.override_active_topic,
             self._on_joystick_override_active,
             10,
         )
-        self.line_follow_param_client = self.create_client(
-            SetParameters,
-            f"{self.line_follow_node_name.rstrip('/')}/set_parameters",
-        )
-        self._setup_gpio()
+        self._ensure_gpio_ready(force=True)
         run_dir = self.capture.start()
-        if self._should_manage_driver_process():
-            self._start_driver_process()
-        if self.autostart_line_follow_stack:
-            self._start_line_follow_process()
         self.timer = self.create_timer(1.0 / poll_hz, self._poll_trigger)
         self._publish_command((0.0, 0.0))
+        self._publish_line_follow_enabled(False, force=True)
 
         self.get_logger().info(
             f"long-press trigger ready: forward_pin={self.forward_pin}, reverse_pin={self.reverse_pin}, "
@@ -184,15 +183,15 @@ class RemoteLongPressStartNode(Node):
             f"hold_seconds={self.hold_seconds:.2f}, "
             f"debounce_activate_count={debounce_activate_count}, "
             f"debounce_deactivate_count={debounce_deactivate_count}, "
-            f"autostart_line_follow_stack={self.autostart_line_follow_stack}, "
-            f"autostart_driver_process={self.autostart_driver_process}, "
             f"allow_inputs_without_pull_resistors={self.allow_inputs_without_pull_resistors}, "
-            f"launch_command={self.launch_command}, line_follow_node_name={self.line_follow_node_name}, "
+            f"gpio_retry_attempts={self.gpio_retry_attempts}, "
+            f"gpio_retry_interval_sec={self.gpio_retry_interval_sec:.2f}, "
+            f"gpio_retry_backoff_sec={self.gpio_retry_backoff_sec:.2f}, "
+            f"gpio_read_error_limit={self.gpio_read_error_limit}, "
+            f"line_follow_node_name={self.line_follow_node_name}, "
+            f"line_follow_enable_topic={self.line_follow_enable_topic}, "
             f"override_active_topic={self.override_active_topic}, "
-            f"adopt_existing_line_follow_stack={self.adopt_existing_line_follow_stack}, "
-            f"line_follow_enable_timeout_sec={self.line_follow_enable_timeout_sec:.2f}, "
-            f"line_follow_disable_timeout_sec={self.line_follow_disable_timeout_sec:.2f}, "
-            f"driver_launch_command={self.driver_launch_command}, forward_cmd={self.forward_cmd}"
+            f"forward_cmd={self.forward_cmd}"
         )
         if run_dir:
             self.get_logger().info(f"runtime capture enabled: run_dir={run_dir}")
@@ -221,37 +220,57 @@ class RemoteLongPressStartNode(Node):
             GPIO.setup(self.forward_pin, GPIO.IN)
             GPIO.setup(self.reverse_pin, GPIO.IN)
 
+    def _mark_gpio_unavailable(self, reason: str) -> None:
+        self._gpio_ready = False
+        self._last_gpio_error = str(reason)
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
+        self._transition_to_idle(force=True)
+
+    def _ensure_gpio_ready(self, force: bool = False) -> bool:
+        if self._gpio_ready:
+            return True
+
+        now = time.monotonic()
+        if not force and now < self._next_gpio_retry_monotonic:
+            return False
+
+        try:
+            self._setup_gpio()
+        except Exception as exc:
+            self._gpio_retry_count += 1
+            self._last_gpio_error = str(exc)
+            if self._gpio_retry_count >= self.gpio_retry_attempts:
+                self._next_gpio_retry_monotonic = now + self.gpio_retry_backoff_sec
+                self.get_logger().error(
+                    f"remote GPIO init failed {self._gpio_retry_count}/{self.gpio_retry_attempts}: {exc}; "
+                    f"retry after {self.gpio_retry_backoff_sec:.1f}s"
+                )
+                self._gpio_retry_count = 0
+            else:
+                self._next_gpio_retry_monotonic = now + self.gpio_retry_interval_sec
+                self.get_logger().warn(
+                    f"remote GPIO init failed {self._gpio_retry_count}/{self.gpio_retry_attempts}: {exc}; "
+                    f"retry in {self.gpio_retry_interval_sec:.1f}s"
+                )
+            self._mark_gpio_unavailable(exc)
+            return False
+
+        self._gpio_ready = True
+        self._gpio_retry_count = 0
+        self._next_gpio_retry_monotonic = 0.0
+        self._gpio_read_error_streak = 0
+        if self._last_gpio_error:
+            self.get_logger().info("remote GPIO recovered")
+            self._last_gpio_error = ""
+        return True
+
     def _read_active(self, pin: int, filter_state: DebouncedDigitalInput) -> bool:
         level = int(GPIO.input(pin))
         _, filtered_active, _ = filter_state.update(level)
         return filtered_active
-
-    def _start_line_follow_process(self) -> None:
-        if self._shutting_down:
-            return
-        if self._line_follow_child is not None and self._line_follow_child.poll() is None:
-            return
-        if self.adopt_existing_line_follow_stack and self._line_follow_stack_available():
-            if not self._using_external_line_follow_stack:
-                self.get_logger().warn(
-                    "existing line-follow stack detected, adopting it instead of starting a duplicate launch"
-                )
-                self.capture.log_event(
-                    "existing line-follow stack detected, adopting it instead of starting a duplicate launch"
-                )
-            self._using_external_line_follow_stack = True
-            return
-
-        self.get_logger().info(f"starting line-follow stack: {self.launch_command}")
-        self.capture.log_event(f"starting line-follow stack: {self.launch_command}")
-        launch_log = self.capture.open_log_file("line_follow_launch.log")
-        self._line_follow_child = subprocess.Popen(
-            ["bash", "-lc", self.launch_command],
-            start_new_session=True,
-            stdout=launch_log if launch_log is not None else subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-        )
-        self._using_external_line_follow_stack = False
 
     def _line_follow_target_node_running(self) -> bool:
         target_name = self.line_follow_node_name.strip() or "/line_follow_motor_model_node"
@@ -267,135 +286,36 @@ class RemoteLongPressStartNode(Node):
                 return True
         return False
 
-    def _line_follow_service_available(self, timeout_sec: float = 0.0) -> bool:
-        try:
-            if self.line_follow_param_client.service_is_ready():
-                return True
-            if timeout_sec <= 0.0:
-                return False
-            return bool(self.line_follow_param_client.wait_for_service(timeout_sec=timeout_sec))
-        except Exception as exc:
-            self.get_logger().warn(f"line-follow parameter service check failed: {exc}")
-            return False
-
     def _line_follow_stack_available(self) -> bool:
-        if self._line_follow_child is not None and self._line_follow_child.poll() is None:
-            return True
-        return self._line_follow_target_node_running() or self._line_follow_service_available(
-            timeout_sec=0.05
-        )
-
-    def _ensure_line_follow_process(self) -> bool:
-        if self._shutting_down:
-            return False
-        if self._line_follow_stack_available():
-            return True
-        self._start_line_follow_process()
-        return self._line_follow_stack_available()
-
-    def _launch_command_starts_driver(self) -> bool:
-        return "start_driver:=false" not in self.launch_command.lower()
-
-    def _should_manage_driver_process(self) -> bool:
-        if not self.autostart_driver_process:
-            return False
-        if self.autostart_line_follow_stack and self._launch_command_starts_driver():
-            return False
-        return True
-
-    def _start_driver_process(self) -> None:
-        if self._shutting_down:
-            return
-        if self._driver_child is not None and self._driver_child.poll() is None:
-            return
-
-        self.get_logger().info(f"starting motor driver process: {self.driver_launch_command}")
-        self.capture.log_event(f"starting motor driver process: {self.driver_launch_command}")
-        driver_log = self.capture.open_log_file("motor_driver.log")
-        self._driver_child = subprocess.Popen(
-            ["bash", "-lc", self.driver_launch_command],
-            start_new_session=True,
-            stdout=driver_log if driver_log is not None else subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-        )
-
-    def _ensure_driver_process(self) -> bool:
-        if self._shutting_down:
-            return False
-        if not self._should_manage_driver_process():
-            return True
-        if self._driver_child is not None and self._driver_child.poll() is None:
-            return True
-        self._start_driver_process()
-        return self._driver_child is not None and self._driver_child.poll() is None
+        return self._line_follow_target_node_running()
 
     def _set_line_follow_enabled(self, enabled: bool, force: bool = False) -> bool:
         desired = bool(enabled)
         if desired == self._line_follow_enabled and not force:
             return True
-        if not desired and not self._line_follow_enabled:
-            child_running = self._line_follow_child is not None and self._line_follow_child.poll() is None
-            if not child_running and not self._line_follow_service_available(timeout_sec=0.0):
-                return True
-
-        service_timeout = (
-            self.line_follow_enable_timeout_sec
-            if desired
-            else self.line_follow_disable_timeout_sec
-        )
-        if not self._line_follow_service_available(timeout_sec=service_timeout):
+        if not self._line_follow_stack_available():
             if desired:
                 self.get_logger().warn(
-                    f"parameter service not ready for {self.line_follow_node_name}, cannot set enabled={desired}"
+                    f"line-follow node {self.line_follow_node_name} is not available, cannot enable"
                 )
                 return False
-            self.get_logger().warn(
-                f"parameter service not ready for {self.line_follow_node_name}, cannot confirm line-follow stopped"
-            )
             self._line_follow_enabled = False
             return False
 
-        request = SetParameters.Request()
-        request.parameters = [
-            Parameter("enabled", Parameter.Type.BOOL, desired).to_parameter_msg()
-        ]
-        try:
-            future = self.line_follow_param_client.call_async(request)
-            rclpy.spin_until_future_complete(
-                self,
-                future,
-                timeout_sec=service_timeout,
-            )
-        except Exception as exc:
-            self.get_logger().warn(
-                f"set enabled={desired} failed before completion for {self.line_follow_node_name}: {exc}"
-            )
-            return False
-        if not future.done():
-            self.get_logger().warn(f"set enabled={desired} timed out for {self.line_follow_node_name}")
-            return False
-        if future.exception() is not None:
-            self.get_logger().error(
-                f"failed to set enabled={desired} for {self.line_follow_node_name}: {future.exception()}"
-            )
-            return False
-
-        response = future.result()
-        if response is None or not response.results:
-            self.get_logger().warn(f"empty parameter result while setting enabled={desired}")
-            return False
-
-        result = response.results[0]
-        if not result.successful:
-            self.get_logger().warn(
-                f"line-follow enable switch rejected: enabled={desired}, reason={result.reason}"
-            )
-            return False
-
+        self._publish_line_follow_enabled(desired, force=True)
         self._line_follow_enabled = desired
         self.get_logger().info(f"line-follow enabled set to {desired}")
         self.capture.log_event(f"line-follow enabled set to {desired}")
         return True
+
+    def _publish_line_follow_enabled(self, enabled: bool, force: bool = False) -> None:
+        msg = Bool()
+        msg.data = bool(enabled)
+        count = 3 if force else 1
+        for _ in range(count):
+            self.line_follow_enable_pub.publish(msg)
+            if count > 1:
+                time.sleep(0.02)
 
     def _publish_stop_burst(self, count: int = 3, delay_sec: float = 0.02) -> None:
         for _ in range(max(1, count)):
@@ -410,15 +330,33 @@ class RemoteLongPressStartNode(Node):
         )
 
     def _poll_trigger(self) -> None:
-        self._check_driver_process()
-        self._check_line_follow_process()
-        if not self._ensure_driver_process():
-            self.get_logger().error("motor driver process is not running, forcing idle")
-            self._transition_to_idle()
+        if not self._ensure_gpio_ready():
             return
 
-        forward_active = self._read_active(self.forward_pin, self.forward_filter)
-        reverse_active = self._read_active(self.reverse_pin, self.reverse_filter)
+        try:
+            forward_active = self._read_active(self.forward_pin, self.forward_filter)
+            reverse_active = self._read_active(self.reverse_pin, self.reverse_filter)
+        except Exception as exc:
+            self._gpio_read_error_streak += 1
+            error_text = f"{type(exc).__name__}: {exc!r}"
+            if self._gpio_read_error_streak >= self.gpio_read_error_limit:
+                self.get_logger().error(
+                    f"remote GPIO read failed {self._gpio_read_error_streak}/{self.gpio_read_error_limit}: "
+                    f"{error_text}; marking GPIO unavailable"
+                )
+                self._mark_gpio_unavailable(error_text)
+                self._next_gpio_retry_monotonic = 0.0
+            else:
+                self.get_logger().warn(
+                    f"remote GPIO transient read failure {self._gpio_read_error_streak}/{self.gpio_read_error_limit}: "
+                    f"{error_text}; keeping current mode"
+                )
+            return
+        if self._gpio_read_error_streak > 0:
+            self.get_logger().info(
+                f"remote GPIO read recovered after {self._gpio_read_error_streak} consecutive failures"
+            )
+            self._gpio_read_error_streak = 0
         now = time.monotonic()
 
         requested_mode = self._resolve_requested_mode(forward_active, reverse_active)
@@ -521,13 +459,15 @@ class RemoteLongPressStartNode(Node):
         if mode == "line_follow":
             self.get_logger().warn("long press detected on reverse channel, enabling line-follow mode")
             self.capture.log_event("long press detected on reverse channel, enabling line-follow mode")
-            if self._ensure_line_follow_process():
+            if self._line_follow_stack_available():
                 self._active_mode = "line_follow_pending"
                 self._last_line_follow_enable_attempt = time.monotonic()
                 if self._set_line_follow_enabled(True):
                     self._active_mode = "line_follow"
                 else:
                     self.get_logger().warn("line-follow stack is starting, keep waiting while reverse channel is held")
+            else:
+                self.get_logger().warn("line-follow stack is not available, cannot enable line-follow mode")
             return
 
         self.get_logger().warn(f"unsupported mode request ignored: {mode}")
@@ -537,8 +477,8 @@ class RemoteLongPressStartNode(Node):
             self._set_line_follow_enabled(False)
             self._publish_command(self.forward_cmd)
         elif self._active_mode in {"line_follow", "line_follow_pending"}:
-            if not self._ensure_line_follow_process():
-                self.get_logger().error("line-follow mode requested but launch process is not running")
+            if not self._line_follow_stack_available():
+                self.get_logger().error("line-follow mode requested but line-follow stack is not available")
                 self._transition_to_idle()
                 return
             now = time.monotonic()
@@ -567,16 +507,10 @@ class RemoteLongPressStartNode(Node):
 
         disabled = self._set_line_follow_enabled(False, force=True)
         self._publish_stop_burst()
-        if not disabled and self._line_follow_child is not None:
-            if self._using_external_line_follow_stack:
-                self.get_logger().warn(
-                    "line-follow disable failed, cannot stop external line-follow launch"
-                )
-            else:
-                self.get_logger().warn("line-follow disable failed, stopping managed launch process")
-                self._stop_line_follow()
-        elif not self.autostart_line_follow_stack:
-            self._stop_line_follow()
+        if not disabled:
+            self.get_logger().warn(
+                "line-follow disable failed; keeping idle state but line-follow node may still be active"
+            )
         self.capture.log_event("transition to idle")
         self._active_mode = "idle"
 
@@ -608,106 +542,19 @@ class RemoteLongPressStartNode(Node):
             self.get_logger().warn("joystick override inactive, waiting for remote inputs to be released")
             self.capture.log_event("joystick override inactive, waiting for remote inputs to be released")
 
-    def _check_line_follow_process(self) -> None:
-        if self._line_follow_child is None:
-            return
-
-        exit_code = self._line_follow_child.poll()
-        if exit_code is None:
-            return
-
-        self.get_logger().error(f"line-follow launch exited with code {exit_code}")
-        self.capture.log_event(f"line-follow launch exited with code {exit_code}")
-        self._line_follow_child = None
-        self._line_follow_enabled = False
-        self._using_external_line_follow_stack = False
-        if self._active_mode in {"line_follow", "line_follow_pending"}:
-            self._active_mode = "idle"
-        self._press_started_at = None
-        self._hold_candidate = None
-
-    def _check_driver_process(self) -> None:
-        if self._driver_child is None:
-            return
-
-        exit_code = self._driver_child.poll()
-        if exit_code is None:
-            return
-
-        self.get_logger().error(f"motor driver process exited with code {exit_code}")
-        self.capture.log_event(f"motor driver process exited with code {exit_code}")
-        self._driver_child = None
-
-    def _wait_or_signal(self, child, timeout_sec: float, sig) -> bool:
-        try:
-            child.wait(timeout=timeout_sec)
-            return True
-        except subprocess.TimeoutExpired:
-            try:
-                pgid = os.getpgid(child.pid)
-                os.killpg(pgid, sig)
-            except ProcessLookupError:
-                return True
-            except Exception:
-                return False
-            return False
-        except Exception:
-            return child.poll() is not None
-
-    def _stop_process(self, child, label: str) -> None:
-        if child is None:
-            return
-
-        if child.poll() is not None:
-            return
-
-        try:
-            self.get_logger().info(f"stopping {label} process")
-            self.capture.log_event(f"stopping {label} process")
-            pgid = os.getpgid(child.pid)
-            os.killpg(pgid, signal.SIGINT)
-        except ProcessLookupError:
-            return
-        except Exception as exc:
-            self.get_logger().warn(f"failed to signal {label} process group with SIGINT: {exc}")
-            return
-
-        if self._wait_or_signal(child, 2.0, signal.SIGTERM):
-            return
-        self.get_logger().warn(f"{label} did not stop after SIGINT, sent SIGTERM")
-
-        if self._wait_or_signal(child, 2.0, signal.SIGKILL):
-            return
-        self.get_logger().warn(f"{label} did not stop after SIGTERM, sent SIGKILL")
-
-        try:
-            child.wait(timeout=1.0)
-        except Exception:
-            pass
-
-    def _stop_line_follow(self) -> None:
-        if self._line_follow_child is None:
-            return
-        self._stop_process(self._line_follow_child, "line-follow launch")
-        self._line_follow_child = None
-        self._using_external_line_follow_stack = False
-
-    def _stop_driver_process(self) -> None:
-        if self._driver_child is None:
-            return
-        self._stop_process(self._driver_child, "motor driver process")
-        self._driver_child = None
-
     def destroy_node(self) -> bool:
         self._shutting_down = True
         try:
             self._transition_to_idle(force=True)
-            self._stop_line_follow()
-            self._stop_driver_process()
             self.capture.stop()
         finally:
             try:
                 GPIO.cleanup()
+            except Exception:
+                pass
+        if hasattr(self, "_pid_file") and self._pid_file and os.path.exists(self._pid_file):
+            try:
+                os.remove(self._pid_file)
             except Exception:
                 pass
         return super().destroy_node()
@@ -715,6 +562,22 @@ class RemoteLongPressStartNode(Node):
 
 def main() -> int:
     node = None
+    pid_file = "/tmp/remote_long_press_line_follow.pid"
+
+    def cleanup_handler(signum, frame):
+        if os.path.exists(pid_file):
+            try:
+                os.remove(pid_file)
+            except Exception:
+                pass
+        if node is not None:
+            node.destroy_node()
+        rclpy.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, cleanup_handler)
+    signal.signal(signal.SIGINT, cleanup_handler)
+
     try:
         rclpy.init()
         node = RemoteLongPressStartNode()

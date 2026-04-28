@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Probe joystick GPIO inputs on RDK X5.
+摇杆 GPIO 探针工具。
 
-Use this script first to confirm which physical joystick direction pulls which
-RDK header pin. Default monitored pins are 11, 15, 13 and 16 using BOARD
-numbering and active-low inputs.
+用于在正式运行摇杆节点之前，先确认：
+1. 某个物理方向到底对应哪个引脚
+2. 输入是高有效还是低有效
+3. 去抖阈值是否合适
+
+默认监视 BOARD 编号的 11、15、13、16 四个引脚。
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
+    # 兼容“源码目录直接运行”的场景。
     sys.path.insert(0, REPO_ROOT)
 
 try:
@@ -31,6 +35,7 @@ GPIO = load_gpio_module()
 
 
 def parse_args():
+    """解析探针参数，便于快速切换监视引脚和采样模式。"""
     parser = argparse.ArgumentParser(description="Probe joystick GPIO pins")
     parser.add_argument("--pins", nargs="+", type=int, default=[11, 15, 13, 16])
     parser.add_argument("--mode", choices=("BOARD", "BCM"), default="BOARD")
@@ -43,6 +48,7 @@ def parse_args():
 
 
 def main() -> int:
+    """循环打印原始电平和去抖结果，辅助现场接线排查。"""
     args = parse_args()
     mode = GPIO.BOARD if args.mode == "BOARD" else GPIO.BCM
     GPIO.setwarnings(False)

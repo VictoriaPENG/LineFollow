@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Relay remote drive control for RDK X5 40-pin header.
+继电器遥控直驱节点。
 
-Default behavior:
-- Physical pin 29 receives a sustained relay signal -> drive forward
-- Physical pin 31 receives a sustained relay signal -> drive backward
-- No signal or both signals active -> stop
+默认行为：
+1. 物理 pin 29 收到稳定继电器信号 -> 前进
+2. 物理 pin 31 收到稳定继电器信号 -> 后退
+3. 没有信号或两个方向同时有效 -> 停车
 
-This script publishes `/motor_speed_cmd` as `[left_rpm, right_rpm]` and expects
-`motor_driver_control_node` to already be running.
+本节点直接发布 `/motor_speed_cmd`，因此默认要求
+`motor_driver_control_node` 已经在运行。
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ FIXED_ALLOW_INPUTS_WITHOUT_PULL_RESISTORS = False
 
 
 class RelayRemoteDriveNode(Node):
-    """Read relay inputs from GPIO and publish motor speed commands."""
+    """读取继电器输入并直接发布电机速度命令。"""
 
     def __init__(self) -> None:
         super().__init__("relay_remote_drive_node")

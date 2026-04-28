@@ -31,6 +31,8 @@ from std_msgs.msg import Float32MultiArray
 
 
 class _StreamState:
+    """保存单路视频流的最新帧及等待条件。"""
+
     def __init__(self, label: str) -> None:
         self.label = label
         self.frame = None
@@ -39,11 +41,15 @@ class _StreamState:
 
 
 class _ThreadingHTTPServer(ThreadingMixIn, server.HTTPServer):
+    """支持并发请求的 HTTP 服务，供多路 MJPEG 和状态接口复用。"""
+
     daemon_threads = True
     allow_reuse_address = True
 
 
 class _MotorSpeedState:
+    """缓存最近一次左右电机转速状态，供网页端读取。"""
+
     def __init__(self) -> None:
         self.left_rpm = 0.0
         self.right_rpm = 0.0
@@ -52,6 +58,8 @@ class _MotorSpeedState:
 
 
 class WebDebugDashboardNode(Node):
+    """提供图像流、速度状态和四宫格调试页面的 Web 节点。"""
+
     def __init__(self) -> None:
         super().__init__("web_debug_dashboard_node")
 
