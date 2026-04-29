@@ -174,7 +174,7 @@ def generate_launch_description():
     )
     roi_height_ratio_arg = DeclareLaunchArgument(
         "roi_height_ratio",
-        default_value="0.12",
+        default_value="0.5",
         description="Detect ROI height ratio relative to image height",
     )
     roi_side_margin_ratio_arg = DeclareLaunchArgument(
@@ -544,6 +544,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
+                "angle_topic": LaunchConfiguration("visual_heading_error_topic"),
                 "track_width_m": LaunchConfiguration("track_width_m"),
                 "offset_norm_topic": LaunchConfiguration("visual_lateral_error_norm_topic"),
                 "line_detected_topic": LaunchConfiguration("line_detected_topic"),

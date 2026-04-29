@@ -192,7 +192,7 @@ def generate_launch_description():
     )
     roi_height_ratio_arg = DeclareLaunchArgument(
         "roi_height_ratio",
-        default_value="0.12",
+        default_value="0.5",
         description="Detect ROI height ratio relative to image height",
     )
     roi_side_margin_ratio_arg = DeclareLaunchArgument(

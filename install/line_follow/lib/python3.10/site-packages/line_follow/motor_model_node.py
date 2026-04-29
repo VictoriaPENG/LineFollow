@@ -506,16 +506,28 @@ class LineFollowMotorModelNode(Node):
         offset_norm = self._sanitize_scalar(offset_norm, default=0.0, limit=1.0)
         abs_offset_norm = abs(offset_norm)
         if abs_offset_norm <= self.offset_priority_threshold_norm:
-            heading_scale = 1.0
+            offset_priority_ratio = 0.0
         elif abs_offset_norm >= self.offset_priority_full_norm:
-            heading_scale = self.offset_priority_min_heading_scale
+            offset_priority_ratio = 1.0
         else:
             ratio = (
                 (abs_offset_norm - self.offset_priority_threshold_norm)
                 / (self.offset_priority_full_norm - self.offset_priority_threshold_norm)
             )
-            heading_scale = 1.0 - ratio * (1.0 - self.offset_priority_min_heading_scale)
-        command_angle_deg = heading_scale * angle_deg + self.offset_gain_deg * offset_norm
+            offset_priority_ratio = max(0.0, min(1.0, ratio))
+
+        heading_scale = 1.0 - offset_priority_ratio * (1.0 - self.offset_priority_min_heading_scale)
+        offset_angle_deg = self.offset_gain_deg * offset_norm
+        heading_angle_deg = heading_scale * angle_deg
+        if (
+            offset_priority_ratio > 0.0
+            and abs(offset_angle_deg) > 1e-6
+            and heading_angle_deg * offset_angle_deg < 0.0
+        ):
+            # 横向偏差明显且与线方向相反时，先按横向偏差回线，避免越偏越先往外打。
+            heading_angle_deg *= 1.0 - offset_priority_ratio
+
+        command_angle_deg = heading_angle_deg + offset_angle_deg
         command_angle_deg = self._sanitize_scalar(
             command_angle_deg,
             default=0.0,
@@ -557,7 +569,7 @@ class LineFollowMotorModelNode(Node):
             signed_left_motor_rpm,
             signed_right_motor_rpm,
             0.5 * (abs(signed_left_motor_rpm) + abs(signed_right_motor_rpm)),
-            0.5 * (abs(signed_right_motor_rpm) - abs(signed_left_motor_rpm)),
+            delta_motor_rpm,
         )
 
     def _filter_angle(self, raw_angle_deg: float) -> float:
@@ -615,6 +627,25 @@ class LineFollowMotorModelNode(Node):
         msg.data = [float(left_rpm), float(right_rpm)]
         self.speed_pub.publish(msg)
 
+    def _publish_debug_float(self, attr_name: str, topic_name: str, value: float) -> None:
+        """发布调试 Float32；失败时隔离调试链路，避免退出主控制节点。"""
+        publisher = getattr(self, attr_name)
+        if publisher is None:
+            return
+
+        try:
+            data = float(value)
+            if not math.isfinite(data):
+                data = 0.0
+            debug_msg = Float32()
+            debug_msg.data = data
+            publisher.publish(debug_msg)
+        except Exception as exc:
+            setattr(self, attr_name, None)
+            self.get_logger().error(
+                f"disable debug publisher {topic_name} after publish failure: {exc}"
+            )
+
     def stop_for_missing_angle(self, now=None) -> None:
         """视觉角度无效或检测失败时输出 0 速度让小车停下，节点继续运行。"""
         if now is None:
@@ -647,15 +678,16 @@ class LineFollowMotorModelNode(Node):
         self.last_speed_update_stamp = self.get_clock().now()
         self.publish_speed(left_rpm, right_rpm)
 
-        if self.debug_center_pub is not None:
-            debug_msg = Float32()
-            debug_msg.data = float(center_motor_rpm)
-            self.debug_center_pub.publish(debug_msg)
-
-        if self.debug_delta_pub is not None:
-            debug_msg = Float32()
-            debug_msg.data = float(delta_motor_rpm)
-            self.debug_delta_pub.publish(debug_msg)
+        self._publish_debug_float(
+            "debug_center_pub",
+            "/line_follow/center_motor_rpm",
+            center_motor_rpm,
+        )
+        self._publish_debug_float(
+            "debug_delta_pub",
+            "/line_follow/delta_motor_rpm",
+            delta_motor_rpm,
+        )
 
     def on_angle(self, msg: Float32):
         """角度回调：只缓存最新角度，速度命令按固定周期更新。"""

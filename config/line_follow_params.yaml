@@ -114,8 +114,8 @@ line_follow_angle_node:
 
 line_follow_motor_model_node:
   ros__parameters:
-    # 输入的视觉角度话题。由视觉节点发布，表示线相对车体前向的偏转角。
-    angle_topic: "/line_follow/line_angle_deg"
+    # 输入的视觉航向误差话题。与 line_follow_angle_node 的 visual_heading_error_topic 保持一致。
+    angle_topic: "/line_follow/visual_heading_error_deg"
     # 输入的标定后横向误差话题，正值表示线相对参考位置偏右。
     offset_norm_topic: "/line_follow/visual_lateral_error_norm"
     # 线检测成功标志话题。用于重新使能后的放行保护，以及丢线保护。

@@ -114,8 +114,8 @@ line_follow_angle_node:
 
 line_follow_motor_model_node:
   ros__parameters:
-    # 输入的视觉角度话题。由视觉节点发布，表示线相对车体前向的偏转角。
-    angle_topic: "/line_follow/line_angle_deg"
+    # 输入的视觉航向误差话题。与 line_follow_angle_node 的 visual_heading_error_topic 保持一致。
+    angle_topic: "/line_follow/visual_heading_error_deg"
     # 输入的标定后横向误差话题，正值表示线相对参考位置偏右。
     offset_norm_topic: "/line_follow/visual_lateral_error_norm"
     # 线检测成功标志话题。用于重新使能后的放行保护，以及丢线保护。
@@ -168,7 +168,7 @@ line_follow_motor_model_node:
     # 转向非线性指数。大于 1 时小角度更柔和，大角度保留更强差速。
     steering_nonlinearity: 1.25
     # 差速转向量上限，单位 RPM。0 表示不单独限制差速项。
-    max_delta_motor_rpm: 1600.0
+    max_delta_motor_rpm: 1200.0
     # 是否允许一侧电机反转参与急转。false 时只做前进差速，true 时可原地感更强地转向。
     allow_reverse: false
     # 视觉角度命令的新鲜度超时时间。超过这个时间没收到新角度，就视为视觉输入失效。
@@ -184,7 +184,7 @@ line_follow_motor_model_node:
     # 直行角度判定阈值，单位度。角度足够小时直接视作直线前进。
     straight_angle_epsilon_deg: 1.5
     # 左右电机转速每秒最大变化量，单位 RPM/s。用于限制速度阶跃，减少冲击。
-    max_motor_rpm_step_per_sec: 4000.0
+    max_motor_rpm_step_per_sec: 1200.0
     # 电机目标转速上限，单位 RPM。用于限制控制输出，防止给驱动器过大的目标值。
     max_motor_rpm: 3000.0
     # 转向方向符号。1 表示按当前角度定义转向，-1 表示整体反向修正。
