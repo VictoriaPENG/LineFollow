@@ -267,17 +267,17 @@ def generate_launch_description():
     )
     base_motor_rpm_arg = DeclareLaunchArgument(
         "base_motor_rpm",
-        default_value="400.0",
+        default_value="600.0",
         description="Fixed forward motor RPM used during line following",
     )
     slow_base_motor_rpm_arg = DeclareLaunchArgument(
         "slow_base_motor_rpm",
-        default_value="400.0",
+        default_value="600.0",
         description="Compatibility parameter; center RPM is fixed by base_motor_rpm",
     )
     severe_base_motor_rpm_arg = DeclareLaunchArgument(
         "severe_base_motor_rpm",
-        default_value="400.0",
+        default_value="600.0",
         description="Compatibility parameter; center RPM is fixed by base_motor_rpm",
     )
     slow_speed_offset_enter_norm_arg = DeclareLaunchArgument(
@@ -517,6 +517,7 @@ def generate_launch_description():
             "device": LaunchConfiguration("device"),
             "enable_websocket": LaunchConfiguration("enable_websocket"),
             "enable_dashboard": LaunchConfiguration("enable_dashboard"),
+            "dashboard_speed_cmd_topic": "/motor_speed_cmd",
             "dashboard_speed_status_topic": LaunchConfiguration("speed_status_topic"),
         }.items(),
     )

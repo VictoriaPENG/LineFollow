@@ -48,7 +48,7 @@ class _ThreadingHTTPServer(ThreadingMixIn, server.HTTPServer):
 
 
 class _MotorSpeedState:
-    """缓存最近一次左右电机转速状态，供网页端读取。"""
+    """缓存最近一次左右电机转速，供网页端读取。"""
 
     def __init__(self) -> None:
         self.left_rpm = 0.0
@@ -72,6 +72,7 @@ class WebDebugDashboardNode(Node):
         self.declare_parameter("detect_topic", "/line_follow/debug_detect")
         self.declare_parameter("binary_topic", "/line_follow/debug_binary")
         self.declare_parameter("curve_topic", "/line_follow/debug_angle_curve")
+        self.declare_parameter("speed_cmd_topic", "/motor_speed_cmd")
         self.declare_parameter("speed_status_topic", "/motor_speed_status")
 
         self.bind_host = str(self.get_parameter("bind_host").value)
@@ -79,8 +80,10 @@ class WebDebugDashboardNode(Node):
         self.jpeg_quality = max(30, min(95, int(self.get_parameter("jpeg_quality").value)))
         self.open_browser = bool(self.get_parameter("open_browser").value)
         self.bridge = CvBridge()
+        self.speed_cmd_topic = str(self.get_parameter("speed_cmd_topic").value)
         self.speed_status_topic = str(self.get_parameter("speed_status_topic").value)
-        self.motor_speed = _MotorSpeedState()
+        self.cmd_speed = _MotorSpeedState()
+        self.status_speed = _MotorSpeedState()
 
         topic_map = {
             "source": (
@@ -116,6 +119,14 @@ class WebDebugDashboardNode(Node):
                         qos_profile_sensor_data,
                     )
                 )
+        self._subscriptions.append(
+            self.create_subscription(
+                Float32MultiArray,
+                self.speed_cmd_topic,
+                self._on_speed_cmd,
+                10,
+            )
+        )
         self._subscriptions.append(
             self.create_subscription(
                 Float32MultiArray,
@@ -182,26 +193,40 @@ class WebDebugDashboardNode(Node):
 
         return _callback
 
-    def _on_speed_status(self, msg: Float32MultiArray) -> None:
+    def _update_motor_speed(self, state: _MotorSpeedState, msg: Float32MultiArray) -> None:
         if len(msg.data) < 2:
             return
-        with self.motor_speed.lock:
-            self.motor_speed.left_rpm = float(msg.data[0])
-            self.motor_speed.right_rpm = float(msg.data[1])
-            self.motor_speed.updated_at = time.time()
+        with state.lock:
+            state.left_rpm = float(msg.data[0])
+            state.right_rpm = float(msg.data[1])
+            state.updated_at = time.time()
 
-    def _status_json(self) -> bytes:
-        now = time.time()
-        with self.motor_speed.lock:
-            updated_at = self.motor_speed.updated_at
-            body = {
-                "left_rpm": self.motor_speed.left_rpm,
-                "right_rpm": self.motor_speed.right_rpm,
+    def _on_speed_cmd(self, msg: Float32MultiArray) -> None:
+        self._update_motor_speed(self.cmd_speed, msg)
+
+    def _on_speed_status(self, msg: Float32MultiArray) -> None:
+        self._update_motor_speed(self.status_speed, msg)
+
+    def _speed_snapshot(self, state: _MotorSpeedState, now: float) -> dict:
+        with state.lock:
+            updated_at = state.updated_at
+            return {
+                "left_rpm": state.left_rpm,
+                "right_rpm": state.right_rpm,
                 "updated_at": updated_at,
                 "age_sec": None if updated_at <= 0.0 else max(0.0, now - updated_at),
                 "stale": updated_at <= 0.0 or (now - updated_at) > 1.0,
-                "speed_status_topic": self.speed_status_topic,
             }
+
+    def _status_json(self) -> bytes:
+        now = time.time()
+        body = {
+            "cmd": self._speed_snapshot(self.cmd_speed, now),
+            "status": self._speed_snapshot(self.status_speed, now),
+            "speed_cmd_topic": self.speed_cmd_topic,
+            "speed_status_topic": self.speed_status_topic,
+        }
+        body.update(body["status"])
         return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
     def _html(self) -> bytes:
@@ -269,15 +294,34 @@ class WebDebugDashboardNode(Node):
             }}
             .status {{
               display: grid;
-              grid-template-columns: repeat(3, minmax(0, 1fr));
+              grid-template-columns: repeat(2, minmax(0, 1fr));
               gap: 12px;
               margin-bottom: 16px;
             }}
-            .metric {{
+            .speed-panel {{
               border: 1px solid rgba(148,163,184,0.18);
               border-radius: 8px;
               padding: 12px 14px;
               background: rgba(17,24,39,0.86);
+            }}
+            .speed-panel header {{
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 10px;
+            }}
+            .speed-panel header strong {{
+              font-size: 14px;
+            }}
+            .speed-panel header code {{
+              color: var(--accent);
+              font-size: 12px;
+            }}
+            .speed-values {{
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 10px;
             }}
             .metric label {{
               display: block;
@@ -295,7 +339,8 @@ class WebDebugDashboardNode(Node):
               color: var(--muted);
               font-size: 12px;
             }}
-            .metric.stale strong {{
+            .speed-panel.stale .metric strong,
+            .speed-panel.stale header strong {{
               color: #f97316;
             }}
             .grid {{
@@ -355,20 +400,41 @@ class WebDebugDashboardNode(Node):
               <span>刷新页面即可重连流</span>
             </div>
             <section class="status">
-              <div class="metric" id="left-speed">
-                <label>Left Motor</label>
-                <strong>--</strong>
-                <small>RPM</small>
+              <div class="speed-panel" id="cmd-speed">
+                <header>
+                  <strong>模型计算速度</strong>
+                  <code>{self.speed_cmd_topic}</code>
+                </header>
+                <div class="speed-values">
+                  <div class="metric">
+                    <label>Left</label>
+                    <strong data-side="left">--</strong>
+                    <small>RPM</small>
+                  </div>
+                  <div class="metric">
+                    <label>Right</label>
+                    <strong data-side="right">--</strong>
+                    <small>RPM</small>
+                  </div>
+                </div>
               </div>
-              <div class="metric" id="right-speed">
-                <label>Right Motor</label>
-                <strong>--</strong>
-                <small>RPM</small>
-              </div>
-              <div class="metric" id="speed-state">
-                <label>Motor Status</label>
-                <strong>Waiting</strong>
-                <small>{self.speed_status_topic}</small>
+              <div class="speed-panel" id="status-speed">
+                <header>
+                  <strong>驱动下发速度</strong>
+                  <code>{self.speed_status_topic}</code>
+                </header>
+                <div class="speed-values">
+                  <div class="metric">
+                    <label>Left</label>
+                    <strong data-side="left">--</strong>
+                    <small>RPM</small>
+                  </div>
+                  <div class="metric">
+                    <label>Right</label>
+                    <strong data-side="right">--</strong>
+                    <small>RPM</small>
+                  </div>
+                </div>
               </div>
             </section>
             <div class="grid">
@@ -376,29 +442,27 @@ class WebDebugDashboardNode(Node):
             </div>
           </div>
           <script>
-            const leftSpeed = document.querySelector("#left-speed");
-            const rightSpeed = document.querySelector("#right-speed");
-            const speedState = document.querySelector("#speed-state");
+            const cmdSpeed = document.querySelector("#cmd-speed");
+            const statusSpeed = document.querySelector("#status-speed");
 
-            function setMetric(card, value, stale) {{
-              card.classList.toggle("stale", stale);
-              card.querySelector("strong").textContent = value;
+            function setSpeedPanel(panel, data) {{
+              const stale = !data || Boolean(data.stale);
+              panel.classList.toggle("stale", stale);
+              panel.querySelector('[data-side="left"]').textContent =
+                stale ? "--" : Number(data.left_rpm).toFixed(0);
+              panel.querySelector('[data-side="right"]').textContent =
+                stale ? "--" : Number(data.right_rpm).toFixed(0);
             }}
 
             async function refreshStatus() {{
               try {{
                 const response = await fetch("/api/status", {{ cache: "no-store" }});
                 const data = await response.json();
-                const stale = Boolean(data.stale);
-                setMetric(leftSpeed, stale ? "--" : Number(data.left_rpm).toFixed(0), stale);
-                setMetric(rightSpeed, stale ? "--" : Number(data.right_rpm).toFixed(0), stale);
-                speedState.classList.toggle("stale", stale);
-                speedState.querySelector("strong").textContent = stale ? "No Data" : "Live";
+                setSpeedPanel(cmdSpeed, data.cmd);
+                setSpeedPanel(statusSpeed, data.status);
               }} catch (error) {{
-                setMetric(leftSpeed, "--", true);
-                setMetric(rightSpeed, "--", true);
-                speedState.classList.add("stale");
-                speedState.querySelector("strong").textContent = "Offline";
+                setSpeedPanel(cmdSpeed, null);
+                setSpeedPanel(statusSpeed, null);
               }}
             }}
 

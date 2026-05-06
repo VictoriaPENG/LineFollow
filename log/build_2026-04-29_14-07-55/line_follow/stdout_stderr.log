@@ -1,0 +1,28 @@
+running egg_info
+writing build/line_follow/line_follow.egg-info/PKG-INFO
+writing dependency_links to build/line_follow/line_follow.egg-info/dependency_links.txt
+writing entry points to build/line_follow/line_follow.egg-info/entry_points.txt
+writing requirements to build/line_follow/line_follow.egg-info/requires.txt
+writing top-level names to build/line_follow/line_follow.egg-info/top_level.txt
+reading manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+writing manifest file 'build/line_follow/line_follow.egg-info/SOURCES.txt'
+running build
+running build_py
+running install
+running install_lib
+running install_data
+copying launch/line_follow_system.launch.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/launch
+copying launch/line_follow_core.launch.py -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/launch
+copying config/line_follow_params.yaml -> /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/share/line_follow/config
+running install_egg_info
+removing '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow-0.1.0-py3.10.egg-info' (and everything under it)
+Copying build/line_follow/line_follow.egg-info to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/python3.10/site-packages/line_follow-0.1.0-py3.10.egg-info
+running install_scripts
+Installing joystick_drive_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing line_follow_angle_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing line_follow_motor_model_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing motor_driver_control_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing remote_long_press_start_line_follow_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing remote_relay_drive_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+Installing web_debug_dashboard_node script to /home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/install/line_follow/lib/line_follow
+writing list of installed files to '/home/yunbo/rdk_backup/dev_ws/src/originbot/Line_follow/build/line_follow/install.log'

@@ -94,6 +94,10 @@ def generate_launch_description():
         'dashboard_curve_topic',
         default_value='/line_follow/debug_angle_curve',
         description='curve debug image topic shown in dashboard')
+    dashboard_speed_cmd_topic_arg = DeclareLaunchArgument(
+        'dashboard_speed_cmd_topic',
+        default_value='/motor_speed_cmd',
+        description='motor speed command topic shown in dashboard')
     dashboard_speed_status_topic_arg = DeclareLaunchArgument(
         'dashboard_speed_status_topic',
         default_value='/motor_speed_status',
@@ -184,6 +188,7 @@ def generate_launch_description():
                 'detect_topic': LaunchConfiguration('dashboard_detect_topic'),
                 'binary_topic': LaunchConfiguration('dashboard_binary_topic'),
                 'curve_topic': LaunchConfiguration('dashboard_curve_topic'),
+                'speed_cmd_topic': LaunchConfiguration('dashboard_speed_cmd_topic'),
                 'speed_status_topic': LaunchConfiguration('dashboard_speed_status_topic'),
             }
         ],
@@ -203,6 +208,7 @@ def generate_launch_description():
         dashboard_detect_topic_arg,
         dashboard_binary_topic_arg,
         dashboard_curve_topic_arg,
+        dashboard_speed_cmd_topic_arg,
         dashboard_speed_status_topic_arg,
         enable_websocket_arg,
         enable_dashboard_arg,

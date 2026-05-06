@@ -137,11 +137,11 @@ line_follow_motor_model_node:
     # 横向偏移优先模式下保留的最小角度项比例，避免完全忽略线方向。
     offset_priority_min_heading_scale: 0.25
     # 固定巡线基础速度。角度或偏移变大时不降中心速度，只增大左右差速。
-    base_motor_rpm: 400.0
+    base_motor_rpm: 600.0
     # 保留兼容参数；当前控制逻辑不再用它降低中心速度。
-    slow_base_motor_rpm: 400.0
+    slow_base_motor_rpm: 600.0
     # 保留兼容参数；当前控制逻辑不再用它降低中心速度。
-    severe_base_motor_rpm: 400.0
+    severe_base_motor_rpm: 600.0
     # 横向偏移进入/退出中等降速阈值，使用归一化偏移量。
     slow_speed_offset_enter_norm: 0.20
     slow_speed_offset_exit_norm: 0.10
