@@ -25,6 +25,9 @@ setup(
             glob("config/*.yaml") + glob("config/*.json"),
         ),
         (os.path.join("share", package_name, "board_tools"), glob("board_tools/*.sh")),
+        (os.path.join("share", package_name, "urdf"), glob("urdf/*.xacro")),
+        (os.path.join("share", package_name, "meshes"), glob("meshes/*")),
+        (os.path.join("share", package_name, "worlds"), glob("worlds/*")),
     ],
     install_requires=["setuptools"],
     zip_safe=False,
@@ -33,7 +36,7 @@ setup(
     description="Vision-based line following package for OriginBot tracked platform.",
     license="Apache-2.0",
     tests_require=["pytest"],
-        entry_points={
+    entry_points={
         "console_scripts": [
             "line_follow_angle_node = line_follow.angle_node:main",
             "line_follow_motor_model_node = line_follow.motor_model_node:main",
@@ -42,6 +45,8 @@ setup(
             "remote_relay_drive_node = line_follow.remote_relay_drive_node:main",
             "remote_long_press_start_line_follow_node = line_follow.remote_long_press_start_line_follow_node:main",
             "web_debug_dashboard_node = line_follow.web_debug_dashboard_node:main",
+            "sim_cmd_vel_controller_node = line_follow.sim_cmd_vel_controller:main",
+            "sim_motion_smoke_test_node = line_follow.sim_motion_smoke_test:main",
         ],
     },
 )

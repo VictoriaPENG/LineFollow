@@ -304,5 +304,6 @@ systemctl start line-follow-hybrid.service
 - [Markdown/摇杆遥控器联合控制调试指南.md](Markdown/摇杆遥控器联合控制调试指南.md)
 - [Markdown/开发机保存网页调试图像.md](Markdown/开发机保存网页调试图像.md)
 - [Markdown/USB相机标定指南.md](Markdown/USB相机标定指南.md)
+- [Markdown/Gazebo仿真验证指南.md](Markdown/Gazebo仿真验证指南.md)
 - [Markdown/真实车体姿态接入教程.md](Markdown/真实车体姿态接入教程.md)
 - [systemd/README.md](systemd/README.md)

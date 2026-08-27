@@ -1,0 +1,106 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="line_follow_car">
+  <!--
+    First-pass simulation model for Gazebo.
+
+    The detailed CAD mesh is used only for visual display. Collision is modeled
+    with simple boxes so the physics engine stays fast and stable.
+  -->
+
+  <xacro:property name="body_mass" value="30.0"/>
+  <xacro:property name="body_ixx" value="2.46"/>
+  <xacro:property name="body_iyy" value="2.43"/>
+  <xacro:property name="body_izz" value="2.97"/>
+
+  <link name="base_link">
+    <!-- Visible fallback geometry. Keep these simple visuals in the model so
+         Gazebo still shows the robot even if the CAD mesh fails to load. -->
+    <visual name="main_chassis_visual">
+      <origin xyz="0.0 0.0 0.18" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.774 0.46 0.22"/>
+      </geometry>
+      <material name="chassis_blue">
+        <color rgba="0.10 0.25 0.80 1.0"/>
+      </material>
+    </visual>
+
+    <visual name="left_track_visual">
+      <origin xyz="0.0 0.32 0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.75 0.13 0.16"/>
+      </geometry>
+      <material name="track_dark">
+        <color rgba="0.02 0.02 0.02 1.0"/>
+      </material>
+    </visual>
+
+    <visual name="right_track_visual">
+      <origin xyz="0.0 -0.32 0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.75 0.13 0.16"/>
+      </geometry>
+      <material name="track_dark">
+        <color rgba="0.02 0.02 0.02 1.0"/>
+      </material>
+    </visual>
+
+    <visual name="cad_visual">
+      <!-- CAD mesh bbox before offset:
+           x [-0.3995375, 0.3744625], y [-0.2233864, 0.5446136],
+           z [0.2110071, 0.93]. This origin recenters x/y and puts the
+           mesh bottom near z=0 in the base_link frame. -->
+      <origin xyz="0.0125375 -0.1606136 -0.2110071" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://line_follow/meshes/chassis_visual.dae"/>
+      </geometry>
+      <material name="cad_gray">
+        <color rgba="0.45 0.47 0.50 1.0"/>
+      </material>
+    </visual>
+
+    <!-- Main chassis envelope. -->
+    <collision name="main_chassis_collision">
+      <origin xyz="0.0 0.0 0.18" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.774 0.46 0.22"/>
+      </geometry>
+    </collision>
+
+    <!-- Left and right track contact envelopes. -->
+    <collision name="left_track_collision">
+      <origin xyz="0.0 0.32 0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.75 0.13 0.16"/>
+      </geometry>
+    </collision>
+
+    <collision name="right_track_collision">
+      <origin xyz="0.0 -0.32 0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.75 0.13 0.16"/>
+      </geometry>
+    </collision>
+
+    <!-- Coarse upper reel/frame envelope, kept broad but lightweight. -->
+    <collision name="upper_frame_collision">
+      <origin xyz="0.0 0.12 0.52" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.62 0.36 0.36"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <origin xyz="0.0 0.0 0.25" rpy="0 0 0"/>
+      <mass value="${body_mass}"/>
+      <inertia
+        ixx="${body_ixx}" ixy="0.0" ixz="0.0"
+        iyy="${body_iyy}" iyz="0.0"
+        izz="${body_izz}"/>
+    </inertial>
+  </link>
+
+  <gazebo reference="base_link">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+</robot>
