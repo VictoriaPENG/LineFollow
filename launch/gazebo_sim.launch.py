@@ -110,7 +110,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "z",
-                default_value="0.05",
+                default_value="0.0",
                 description="Initial robot z position in meters",
             ),
             DeclareLaunchArgument(

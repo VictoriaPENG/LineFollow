@@ -11,6 +11,9 @@
   <xacro:property name="body_ixx" value="2.46"/>
   <xacro:property name="body_iyy" value="2.43"/>
   <xacro:property name="body_izz" value="2.97"/>
+  <xacro:property name="camera_x" value="0.34"/>
+  <xacro:property name="camera_z" value="0.62"/>
+  <xacro:property name="camera_pitch_rad" value="0.82"/>
 
   <link name="base_link">
     <!-- Visible fallback geometry. Keep these simple visuals in the model so
@@ -102,5 +105,58 @@
 
   <gazebo reference="base_link">
     <material>Gazebo/Grey</material>
+  </gazebo>
+
+  <link name="sim_camera_link">
+    <visual name="camera_body_visual">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.08 0.04"/>
+      </geometry>
+      <material name="camera_black">
+        <color rgba="0.02 0.02 0.02 1.0"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.00002" ixy="0.0" ixz="0.0" iyy="0.00002" iyz="0.0" izz="0.00002"/>
+    </inertial>
+  </link>
+
+  <joint name="sim_camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="sim_camera_link"/>
+    <origin xyz="${camera_x} 0.0 ${camera_z}" rpy="0 ${camera_pitch_rad} 0"/>
+  </joint>
+
+  <gazebo reference="sim_camera_link">
+    <sensor name="sim_line_camera" type="camera">
+      <always_on>true</always_on>
+      <update_rate>30.0</update_rate>
+      <visualize>true</visualize>
+      <camera name="line_follow_camera">
+        <horizontal_fov>1.3962634</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.03</near>
+          <far>20.0</far>
+        </clip>
+      </camera>
+      <plugin name="sim_line_camera_controller" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/sim/camera</namespace>
+          <remapping>image_raw:=image_raw</remapping>
+          <remapping>camera_info:=camera_info</remapping>
+        </ros>
+        <camera_name>line_follow_camera</camera_name>
+        <image_topic_name>image_raw</image_topic_name>
+        <camera_info_topic_name>camera_info</camera_info_topic_name>
+        <frame_name>sim_camera_link</frame_name>
+      </plugin>
+    </sensor>
   </gazebo>
 </robot>

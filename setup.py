@@ -47,6 +47,7 @@ setup(
             "web_debug_dashboard_node = line_follow.web_debug_dashboard_node:main",
             "sim_cmd_vel_controller_node = line_follow.sim_cmd_vel_controller:main",
             "sim_motion_smoke_test_node = line_follow.sim_motion_smoke_test:main",
+            "sim_motor_speed_to_cmd_vel_node = line_follow.sim_motor_speed_to_cmd_vel:main",
         ],
     },
 )

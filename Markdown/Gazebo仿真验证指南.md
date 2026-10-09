@@ -1,6 +1,9 @@
 # Gazebo 仿真验证指南
 
-本文用于验证 `line_follow` 的 Gazebo Classic 初版仿真链路：模型能正常加载，且可以通过 `/cmd_vel` 在仿真场景中运动。
+本文用于验证 `line_follow` 的 Gazebo Classic 仿真链路：
+
+1. 第一阶段：模型能正常加载，且可以通过 `/cmd_vel` 在仿真场景中运动。
+2. 第二阶段：Gazebo 相机看到黑色巡线，视觉节点识别后输出控制，最终驱动车体沿线运动。
 
 ## 1. 环境要求
 
@@ -40,6 +43,7 @@ ros2 pkg executables line_follow | grep sim
 ```text
 line_follow sim_cmd_vel_controller_node
 line_follow sim_motion_smoke_test_node
+line_follow sim_motor_speed_to_cmd_vel_node
 ```
 
 ## 3. 启动 Gazebo 模型
@@ -159,9 +163,102 @@ ls install/line_follow/share/line_follow/meshes/chassis_visual.dae
 
 ## 7. 当前仿真边界
 
-当前 Gazebo 仿真是第一阶段模型验证链路：`/cmd_vel` 通过 `SetEntityState` 直接改变车体位姿。它不是完整履带动力学模型，也还没有相机、赛道线和视觉闭环。下一阶段可以继续加入：
+第一阶段 Gazebo 仿真是模型验证链路：`/cmd_vel` 通过 `SetEntityState` 直接改变车体位姿。它不是完整履带动力学模型。
 
-- Gazebo 相机插件，发布 `/image`。
-- 带黑色巡线的 world。
-- RPM 到 `/cmd_vel` 的桥接，接入现有 `line_follow_motor_model_node`。
+## 8. 启动视觉闭环仿真
+
+视觉闭环仿真使用 `line_follow_track.world` 中的浅色地面和黑色巡线，并使用车体 URDF 内置的 Gazebo 相机发布 `/sim/camera/line_follow_camera/image_raw`。
+
+启动：
+
+```bash
+ros2 launch line_follow gazebo_line_follow_sim.launch.py
+```
+
+这个 launch 会启动：
+
+- Gazebo + `line_follow_track.world`
+- 带仿真相机的 `line_follow_car`
+- `line_follow_angle_node`，订阅 `/sim/camera/line_follow_camera/image_raw`
+- `line_follow_motor_model_node`，输出 `/motor_speed_cmd`
+- `sim_motor_speed_to_cmd_vel_node`，把左右电机 RPM 转成 `/cmd_vel`
+- `sim_cmd_vel_controller_node`，把 `/cmd_vel` 应用到 Gazebo 车体位姿
+
+闭环链路如下：
+
+```text
+Gazebo camera
+  -> /sim/camera/line_follow_camera/image_raw
+  -> line_follow_angle_node
+  -> /line_follow/visual_heading_error_deg + /line_follow/visual_lateral_error_norm
+  -> line_follow_motor_model_node
+  -> /motor_speed_cmd
+  -> sim_motor_speed_to_cmd_vel_node
+  -> /cmd_vel
+  -> sim_cmd_vel_controller_node
+  -> Gazebo model pose
+```
+
+观察关键话题：
+
+```bash
+ros2 topic echo /line_follow/line_detected
+ros2 topic echo /line_follow/visual_heading_error_deg
+ros2 topic echo /line_follow/visual_lateral_error_norm
+ros2 topic echo /motor_speed_cmd
+ros2 topic echo /cmd_vel
+```
+
+如果已经启动 web 调试 dashboard，可以看这些调试图像话题：
+
+```text
+/line_follow/debug_undistorted
+/line_follow/debug_binary
+/line_follow/debug_detect
+/line_follow/debug_angle_curve
+```
+
+## 9. 闭环仿真调参建议
+
+如果 Gazebo 中小车不动，先确认视觉是否识别到线：
+
+```bash
+ros2 topic echo /line_follow/line_detected
+```
+
+如果一直是 `false`，优先检查相机图像和二值图：
+
+```bash
+ros2 topic hz /sim/camera/line_follow_camera/image_raw
+ros2 topic hz /line_follow/debug_binary
+```
+
+常用启动参数：
+
+```bash
+ros2 launch line_follow gazebo_line_follow_sim.launch.py \
+  thresh:=120 \
+  margin:=80 \
+  minpix:=20 \
+  roi_height_ratio:=0.70
+```
+
+如果识别到了线但转向方向反了，可以先反转桥接角速度：
+
+```bash
+ros2 launch line_follow gazebo_line_follow_sim.launch.py angular_scale:=-1.0
+```
+
+如果车速过快导致越线，可以降低基础速度：
+
+```bash
+ros2 launch line_follow gazebo_line_follow_sim.launch.py base_motor_rpm:=300 max_motor_rpm:=600
+```
+
+## 10. 后续边界
+
+当前视觉闭环仍然使用 `SetEntityState` 做位姿控制，重点验证图像识别和控制链路。后续可以继续加入：
+
 - 更真实的履带/差速物理模型。
+- 复杂赛道、岔路、断线、不同光照材质。
+- 基于仿真图像的自动回归测试。

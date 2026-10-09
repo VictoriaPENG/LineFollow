@@ -25,8 +25,11 @@ from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
+from std_msgs.msg import Bool
+from std_msgs.msg import Float32
 from std_msgs.msg import Float32MultiArray
 
 
@@ -57,6 +60,25 @@ class _MotorSpeedState:
         self.lock = threading.Lock()
 
 
+class _ScalarState:
+    """缓存最近一次标量状态，供网页端读取。"""
+
+    def __init__(self, default=0.0) -> None:
+        self.value = default
+        self.updated_at = 0.0
+        self.lock = threading.Lock()
+
+
+class _CmdVelState:
+    """缓存最近一次 cmd_vel，供网页端读取。"""
+
+    def __init__(self) -> None:
+        self.linear_x = 0.0
+        self.angular_z = 0.0
+        self.updated_at = 0.0
+        self.lock = threading.Lock()
+
+
 class WebDebugDashboardNode(Node):
     """提供图像流、速度状态和四宫格调试页面的 Web 节点。"""
 
@@ -74,6 +96,10 @@ class WebDebugDashboardNode(Node):
         self.declare_parameter("curve_topic", "/line_follow/debug_angle_curve")
         self.declare_parameter("speed_cmd_topic", "/motor_speed_cmd")
         self.declare_parameter("speed_status_topic", "/motor_speed_status")
+        self.declare_parameter("line_detected_topic", "/line_follow/line_detected")
+        self.declare_parameter("heading_error_topic", "/line_follow/visual_heading_error_deg")
+        self.declare_parameter("lateral_error_topic", "/line_follow/visual_lateral_error_norm")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
 
         self.bind_host = str(self.get_parameter("bind_host").value)
         self.port = int(self.get_parameter("port").value)
@@ -82,8 +108,16 @@ class WebDebugDashboardNode(Node):
         self.bridge = CvBridge()
         self.speed_cmd_topic = str(self.get_parameter("speed_cmd_topic").value)
         self.speed_status_topic = str(self.get_parameter("speed_status_topic").value)
+        self.line_detected_topic = str(self.get_parameter("line_detected_topic").value)
+        self.heading_error_topic = str(self.get_parameter("heading_error_topic").value)
+        self.lateral_error_topic = str(self.get_parameter("lateral_error_topic").value)
+        self.cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
         self.cmd_speed = _MotorSpeedState()
         self.status_speed = _MotorSpeedState()
+        self.line_detected = _ScalarState(False)
+        self.heading_error = _ScalarState(0.0)
+        self.lateral_error = _ScalarState(0.0)
+        self.cmd_vel = _CmdVelState()
 
         topic_map = {
             "source": (
@@ -134,6 +168,18 @@ class WebDebugDashboardNode(Node):
                 self._on_speed_status,
                 10,
             )
+        )
+        self._subscriptions.append(
+            self.create_subscription(Bool, self.line_detected_topic, self._on_line_detected, 10)
+        )
+        self._subscriptions.append(
+            self.create_subscription(Float32, self.heading_error_topic, self._on_heading_error, 10)
+        )
+        self._subscriptions.append(
+            self.create_subscription(Float32, self.lateral_error_topic, self._on_lateral_error, 10)
+        )
+        self._subscriptions.append(
+            self.create_subscription(Twist, self.cmd_vel_topic, self._on_cmd_vel, 10)
         )
 
         self.httpd = _ThreadingHTTPServer((self.bind_host, self.port), self._make_handler())
@@ -207,6 +253,26 @@ class WebDebugDashboardNode(Node):
     def _on_speed_status(self, msg: Float32MultiArray) -> None:
         self._update_motor_speed(self.status_speed, msg)
 
+    def _update_scalar(self, state: _ScalarState, value) -> None:
+        with state.lock:
+            state.value = value
+            state.updated_at = time.time()
+
+    def _on_line_detected(self, msg: Bool) -> None:
+        self._update_scalar(self.line_detected, bool(msg.data))
+
+    def _on_heading_error(self, msg: Float32) -> None:
+        self._update_scalar(self.heading_error, float(msg.data))
+
+    def _on_lateral_error(self, msg: Float32) -> None:
+        self._update_scalar(self.lateral_error, float(msg.data))
+
+    def _on_cmd_vel(self, msg: Twist) -> None:
+        with self.cmd_vel.lock:
+            self.cmd_vel.linear_x = float(msg.linear.x)
+            self.cmd_vel.angular_z = float(msg.angular.z)
+            self.cmd_vel.updated_at = time.time()
+
     def _speed_snapshot(self, state: _MotorSpeedState, now: float) -> dict:
         with state.lock:
             updated_at = state.updated_at
@@ -218,13 +284,42 @@ class WebDebugDashboardNode(Node):
                 "stale": updated_at <= 0.0 or (now - updated_at) > 1.0,
             }
 
+    def _scalar_snapshot(self, state: _ScalarState, now: float) -> dict:
+        with state.lock:
+            updated_at = state.updated_at
+            return {
+                "value": state.value,
+                "updated_at": updated_at,
+                "age_sec": None if updated_at <= 0.0 else max(0.0, now - updated_at),
+                "stale": updated_at <= 0.0 or (now - updated_at) > 1.0,
+            }
+
+    def _cmd_vel_snapshot(self, state: _CmdVelState, now: float) -> dict:
+        with state.lock:
+            updated_at = state.updated_at
+            return {
+                "linear_x": state.linear_x,
+                "angular_z": state.angular_z,
+                "updated_at": updated_at,
+                "age_sec": None if updated_at <= 0.0 else max(0.0, now - updated_at),
+                "stale": updated_at <= 0.0 or (now - updated_at) > 1.0,
+            }
+
     def _status_json(self) -> bytes:
         now = time.time()
         body = {
             "cmd": self._speed_snapshot(self.cmd_speed, now),
             "status": self._speed_snapshot(self.status_speed, now),
+            "line_detected": self._scalar_snapshot(self.line_detected, now),
+            "heading_error": self._scalar_snapshot(self.heading_error, now),
+            "lateral_error": self._scalar_snapshot(self.lateral_error, now),
+            "cmd_vel": self._cmd_vel_snapshot(self.cmd_vel, now),
             "speed_cmd_topic": self.speed_cmd_topic,
             "speed_status_topic": self.speed_status_topic,
+            "line_detected_topic": self.line_detected_topic,
+            "heading_error_topic": self.heading_error_topic,
+            "lateral_error_topic": self.lateral_error_topic,
+            "cmd_vel_topic": self.cmd_vel_topic,
         }
         body.update(body["status"])
         return json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -343,6 +438,73 @@ class WebDebugDashboardNode(Node):
             .speed-panel.stale header strong {{
               color: #f97316;
             }}
+            .signal-panel {{
+              border: 1px solid rgba(148,163,184,0.18);
+              border-radius: 8px;
+              padding: 12px 14px;
+              background: rgba(17,24,39,0.86);
+            }}
+            .signal-panel header {{
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 8px;
+            }}
+            .signal-panel header strong {{
+              font-size: 14px;
+            }}
+            .signal-panel header code {{
+              color: var(--accent);
+              font-size: 12px;
+            }}
+            .signal-value {{
+              display: flex;
+              align-items: baseline;
+              gap: 8px;
+              font-variant-numeric: tabular-nums;
+            }}
+            .signal-value strong {{
+              font-size: 28px;
+              line-height: 1.1;
+            }}
+            .signal-value small {{
+              color: var(--muted);
+            }}
+            .bar {{
+              height: 8px;
+              margin-top: 10px;
+              border-radius: 999px;
+              overflow: hidden;
+              background: rgba(148,163,184,0.2);
+            }}
+            .bar span {{
+              display: block;
+              height: 100%;
+              width: 0%;
+              background: var(--accent);
+              transition: width 0.12s linear, background 0.12s linear;
+            }}
+            .signal-panel.good .signal-value strong {{
+              color: #22c55e;
+            }}
+            .signal-panel.warn .signal-value strong {{
+              color: #f97316;
+            }}
+            .signal-panel.warn .bar span {{
+              background: #f97316;
+            }}
+            .signal-panel.bad .signal-value strong {{
+              color: #ef4444;
+            }}
+            .signal-panel.bad .bar span {{
+              background: #ef4444;
+            }}
+            .signal-panel.stale .signal-value strong,
+            .signal-panel.stale header strong,
+            .speed-panel.stale .speed-values strong {{
+              color: #f97316;
+            }}
             .grid {{
               display: grid;
               grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -436,6 +598,57 @@ class WebDebugDashboardNode(Node):
                   </div>
                 </div>
               </div>
+              <div class="signal-panel" id="line-detected">
+                <header>
+                  <strong>识别状态</strong>
+                  <code>{self.line_detected_topic}</code>
+                </header>
+                <div class="signal-value">
+                  <strong data-value>--</strong>
+                  <small>有线/丢线</small>
+                </div>
+                <div class="bar"><span></span></div>
+              </div>
+              <div class="signal-panel" id="heading-error">
+                <header>
+                  <strong>航向误差</strong>
+                  <code>{self.heading_error_topic}</code>
+                </header>
+                <div class="signal-value">
+                  <strong data-value>--</strong>
+                  <small>deg</small>
+                </div>
+                <div class="bar"><span></span></div>
+              </div>
+              <div class="signal-panel" id="lateral-error">
+                <header>
+                  <strong>横向偏差</strong>
+                  <code>{self.lateral_error_topic}</code>
+                </header>
+                <div class="signal-value">
+                  <strong data-value>--</strong>
+                  <small>norm</small>
+                </div>
+                <div class="bar"><span></span></div>
+              </div>
+              <div class="signal-panel" id="cmd-vel">
+                <header>
+                  <strong>仿真速度</strong>
+                  <code>{self.cmd_vel_topic}</code>
+                </header>
+                <div class="speed-values">
+                  <div class="metric">
+                    <label>Linear</label>
+                    <strong data-side="linear">--</strong>
+                    <small>m/s</small>
+                  </div>
+                  <div class="metric">
+                    <label>Angular</label>
+                    <strong data-side="angular">--</strong>
+                    <small>rad/s</small>
+                  </div>
+                </div>
+              </div>
             </section>
             <div class="grid">
               {''.join(cards)}
@@ -444,6 +657,10 @@ class WebDebugDashboardNode(Node):
           <script>
             const cmdSpeed = document.querySelector("#cmd-speed");
             const statusSpeed = document.querySelector("#status-speed");
+            const lineDetected = document.querySelector("#line-detected");
+            const headingError = document.querySelector("#heading-error");
+            const lateralError = document.querySelector("#lateral-error");
+            const cmdVel = document.querySelector("#cmd-vel");
 
             function setSpeedPanel(panel, data) {{
               const stale = !data || Boolean(data.stale);
@@ -454,15 +671,91 @@ class WebDebugDashboardNode(Node):
                 stale ? "--" : Number(data.right_rpm).toFixed(0);
             }}
 
+            function setPanelState(panel, state) {{
+              panel.classList.remove("good", "warn", "bad", "stale");
+              panel.classList.add(state);
+            }}
+
+            function setLineDetected(panel, data) {{
+              const valueNode = panel.querySelector("[data-value]");
+              const bar = panel.querySelector(".bar span");
+              if (!data || data.stale) {{
+                valueNode.textContent = "--";
+                bar.style.width = "0%";
+                setPanelState(panel, "stale");
+                return;
+              }}
+              const ok = Boolean(data.value);
+              valueNode.textContent = ok ? "有线" : "丢线";
+              bar.style.width = "100%";
+              setPanelState(panel, ok ? "good" : "bad");
+            }}
+
+            function setScalarPanel(panel, data, options) {{
+              const valueNode = panel.querySelector("[data-value]");
+              const bar = panel.querySelector(".bar span");
+              if (!data || data.stale) {{
+                valueNode.textContent = "--";
+                bar.style.width = "0%";
+                setPanelState(panel, "stale");
+                return;
+              }}
+              const value = Number(data.value);
+              const absValue = Math.abs(value);
+              const ratio = Math.min(1, absValue / options.limit);
+              valueNode.textContent = options.format(value);
+              bar.style.width = `${{Math.round(ratio * 100)}}%`;
+              if (absValue <= options.good) setPanelState(panel, "good");
+              else if (absValue <= options.warn) setPanelState(panel, "warn");
+              else setPanelState(panel, "bad");
+            }}
+
+            function setCmdVelPanel(panel, data) {{
+              const stale = !data || Boolean(data.stale);
+              panel.classList.toggle("stale", stale);
+              panel.querySelector('[data-side="linear"]').textContent =
+                stale ? "--" : Number(data.linear_x).toFixed(2);
+              panel.querySelector('[data-side="angular"]').textContent =
+                stale ? "--" : Number(data.angular_z).toFixed(2);
+            }}
+
             async function refreshStatus() {{
               try {{
                 const response = await fetch("/api/status", {{ cache: "no-store" }});
                 const data = await response.json();
                 setSpeedPanel(cmdSpeed, data.cmd);
                 setSpeedPanel(statusSpeed, data.status);
+                setLineDetected(lineDetected, data.line_detected);
+                setScalarPanel(headingError, data.heading_error, {{
+                  good: 4,
+                  warn: 15,
+                  limit: 45,
+                  format: (v) => v.toFixed(1),
+                }});
+                setScalarPanel(lateralError, data.lateral_error, {{
+                  good: 0.10,
+                  warn: 0.30,
+                  limit: 1.0,
+                  format: (v) => v.toFixed(2),
+                }});
+                setCmdVelPanel(cmdVel, data.cmd_vel);
               }} catch (error) {{
                 setSpeedPanel(cmdSpeed, null);
                 setSpeedPanel(statusSpeed, null);
+                setLineDetected(lineDetected, null);
+                setScalarPanel(headingError, null, {{
+                  good: 4,
+                  warn: 15,
+                  limit: 45,
+                  format: (v) => v.toFixed(1),
+                }});
+                setScalarPanel(lateralError, null, {{
+                  good: 0.10,
+                  warn: 0.30,
+                  limit: 1.0,
+                  format: (v) => v.toFixed(2),
+                }});
+                setCmdVelPanel(cmdVel, null);
               }}
             }}
 
